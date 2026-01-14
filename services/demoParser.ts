@@ -62,31 +62,26 @@ export class DemoParser {
     this.startTime = Date.now();
     this.reportProgress(0, 'Initializing parser...');
     
-    // 1. Try to load and use demoparser2
+    // Load and use demoparser2
     this.reportProgress(5, 'Loading WASM parser...');
     const parser = await loadDemoparser2();
     
-      if (parser && isParserAvailable()) {
-      console.log("Using demoparser2 WASM parser...");
-      try {
-        this.reportProgress(10, 'Parsing with WASM...');
-        return await this.parseWithWasm(parser);
-      } catch (e: any) {
-        // Check if it's a WASM panic
-        if (e.message === 'WASM_PANIC' || e.name === 'RuntimeError' || e.message?.includes('panic') || e.message?.includes('unreachable')) {
-          console.log("⚠ WASM parser unavailable for this demo, using hybrid parser with simulated data");
-        } else {
-          console.warn("WASM Parser failed, falling back to hybrid parser:", e.message || e);
-        }
-      }
-    } else {
-      console.warn("demoparser2 not found. Using hybrid parser with simulated data.");
-      console.warn("To use real parsing, place demoparser2.js and demoparser2_bg.wasm in public/pkg/ directory.");
+    if (!parser || !isParserAvailable()) {
+      throw new Error("demoparser2 not found. Please place demoparser2.js and demoparser2_bg.wasm in public/pkg/ directory.");
     }
-
-    // 2. Fallback: Internal Hybrid Parser
-    this.reportProgress(10, 'Using hybrid parser...');
-    return this.parseWithHybrid();
+    
+    console.log("Using demoparser2 WASM parser...");
+    try {
+      this.reportProgress(10, 'Parsing with WASM...');
+      return await this.parseWithWasm(parser);
+    } catch (e: any) {
+      // Check if it's a WASM panic
+      if (e.message === 'WASM_PANIC' || e.name === 'RuntimeError' || e.message?.includes('panic') || e.message?.includes('unreachable')) {
+        throw new Error("Failed to parse demo file. The demo may be corrupted or incompatible.");
+      } else {
+        throw new Error(`Failed to parse demo file: ${e.message || e}`);
+      }
+    }
   }
 
   /**
@@ -174,14 +169,14 @@ export class DemoParser {
     let roundFreezeEndEvents: any[] = [];
     const allEventTicks = new Set<number>(); // Collect all ticks that have events for efficient parsing
     
-    // Declare chatEvents, weaponFireEvents, and damageEvents in outer scope so they're accessible later
-    let chatEvents: any[] = [];
+    // Declare weaponFireEvents, damageEvents, and playerBlindEvents in outer scope so they're accessible later
     let weaponFireEvents: any[] = [];
     let damageEvents: any[] = [];
+    let playerBlindEvents: any[] = [];
     
     try {
       console.log('Extracting events...');
-      const allEvents = parser.parseEvents(buffer, ["player_death", "round_start", "round_begin", "round_end", "round_officially_ended", "cs_round_start", "round_freeze_end", "player_chat", "chat_message", "weapon_fire", "player_hurt", "damage"]);
+      const allEvents = parser.parseEvents(buffer, ["player_death", "round_start", "round_begin", "round_end", "round_officially_ended", "cs_round_start", "round_freeze_end", "weapon_fire", "player_hurt", "damage", "player_blind"]);
       console.log(`✓ Extracted events, type: ${Array.isArray(allEvents) ? 'Array' : allEvents instanceof Map ? 'Map' : typeof allEvents}, length/size: ${Array.isArray(allEvents) ? allEvents.length : allEvents instanceof Map ? allEvents.size : 'N/A'}`);
       
       // Helper function to extract tick from event
@@ -217,8 +212,6 @@ export class DemoParser {
             roundEndEvents.push(event);
           } else if (eventName === 'round_freeze_end') {
             roundFreezeEndEvents.push(event);
-          } else if (eventName === 'player_chat' || eventName === 'chat_message') {
-            // Chat events will be processed later
           } else if (eventName === 'weapon_fire') {
             weaponFireEvents.push(event);
           }
@@ -262,10 +255,10 @@ export class DemoParser {
         }
       }
       
-      // Extract chat events, weapon fire events, and damage events (assign to outer scope variable)
-      chatEvents = [];
+      // Extract weapon fire events, damage events, and player blind events (assign to outer scope variable)
       weaponFireEvents = [];
       damageEvents = [];
+      playerBlindEvents = [];
       if (Array.isArray(allEvents)) {
         allEvents.forEach((event: any) => {
           let eventName = '';
@@ -275,24 +268,18 @@ export class DemoParser {
             eventName = event.event_name || event.name || '';
           }
           
-          if (eventName === 'player_chat' || eventName === 'chat_message') {
-            chatEvents.push(event);
-          } else if (eventName === 'weapon_fire') {
+          if (eventName === 'weapon_fire') {
             weaponFireEvents.push(event);
           } else if (eventName === 'player_hurt' || eventName === 'damage') {
             damageEvents.push(event);
+          } else if (eventName === 'player_blind') {
+            playerBlindEvents.push(event);
           }
         });
       } else if (allEvents instanceof Map) {
         for (const [key, value] of allEvents.entries()) {
           const eventName = String(key).toLowerCase();
-          if (eventName.includes('chat')) {
-            if (Array.isArray(value)) {
-              chatEvents.push(...value);
-            } else {
-              chatEvents.push(value);
-            }
-          } else if (eventName.includes('weapon_fire') || eventName.includes('weaponfire')) {
+          if (eventName.includes('weapon_fire') || eventName.includes('weaponfire')) {
             if (Array.isArray(value)) {
               weaponFireEvents.push(...value);
             } else {
@@ -304,11 +291,17 @@ export class DemoParser {
             } else {
               damageEvents.push(value);
             }
+          } else if (eventName.includes('player_blind')) {
+            if (Array.isArray(value)) {
+              playerBlindEvents.push(...value);
+            } else {
+              playerBlindEvents.push(value);
+            }
           }
         }
       }
       
-      console.log(`✓ Extracted ${deathEvents.length} death events, ${roundStartEvents.length} round start events, ${roundEndEvents.length} round end events, ${chatEvents.length} chat messages, ${weaponFireEvents.length} weapon fire events, ${damageEvents.length} damage events`);
+      console.log(`✓ Extracted ${deathEvents.length} death events, ${roundStartEvents.length} round start events, ${roundEndEvents.length} round end events, ${weaponFireEvents.length} weapon fire events, ${damageEvents.length} damage events, ${playerBlindEvents.length} player blind events`);
       
       // Log sample events to debug
       if (roundStartEvents.length > 0) {
@@ -317,9 +310,6 @@ export class DemoParser {
       if (roundEndEvents.length > 0) {
         console.log('Sample round end event:', roundEndEvents[0]);
         console.log('First 5 round end events:', roundEndEvents.slice(0, 5));
-      }
-      if (chatEvents.length > 0) {
-        console.log('Sample chat event:', chatEvents[0]);
       }
       
       // Deduplicate round end events - keep only one per tick (prefer round_officially_ended over round_end)
@@ -359,6 +349,8 @@ export class DemoParser {
     // Include weapon, grenade, and money fields
     this.reportProgress(30, 'Extracting player data...');
     let rawData: any[] = [];
+    let grenadeData: any[] = []; // Declare outside try block so it's accessible at return statement
+    
     try {
       // First, let's list available fields to see what we can actually get
       this.reportProgress(25, 'Listing available fields...');
@@ -374,7 +366,6 @@ export class DemoParser {
       
       // Parse grenades separately using parseGrenades if available
       // This gives us better grenade data than trying to extract from inventory
-      let grenadeData: any[] = [];
       if (parser.parseGrenades) {
         try {
           console.log('Parsing grenades separately...');
@@ -395,6 +386,7 @@ export class DemoParser {
         "team_num", 
         "player_name",
         "shots_fired",
+        "flash_duration",
       ];
       console.log('Extracting player data with fields:', wantedFields);
       
@@ -654,7 +646,14 @@ export class DemoParser {
         viewAngle: 0, // Not needed for analysis
         hasBomb: false, // Not needed for analysis
         isTalking: false,
-        flashDuration: 0,
+        flashDuration: (() => {
+          const flashDurationValue = playerData.get('flash_duration');
+          if (flashDurationValue !== undefined && flashDurationValue !== null) {
+            const flash = typeof flashDurationValue === 'number' ? flashDurationValue : parseFloat(String(flashDurationValue));
+            return !isNaN(flash) && flash >= 0 ? flash : 0;
+          }
+          return 0;
+        })(),
         shotsFired: (() => {
           const shotsFiredValue = playerData.get('shots_fired');
           if (shotsFiredValue !== undefined && shotsFiredValue !== null) {
@@ -829,43 +828,6 @@ export class DemoParser {
     // Process death events and chat messages
     const eventsByTick = new Map<number, GameEvent[]>();
     const deadPlayersByTick = new Map<number, Set<string>>();
-    
-    // Process chat events (chatEvents was extracted in the try block above)
-    if (chatEvents && chatEvents.length > 0) {
-      chatEvents.forEach((chatEvent: any) => {
-        let eventTick = 0;
-        let playerName = 'Unknown';
-        let message = '';
-        
-        if (chatEvent instanceof Map) {
-          eventTick = chatEvent.get('tick') || chatEvent.get('tick_num') || chatEvent.get('t') || 0;
-          playerName = chatEvent.get('user_name') || chatEvent.get('player_name') || chatEvent.get('name') || 'Unknown';
-          message = chatEvent.get('text') || chatEvent.get('message') || chatEvent.get('msg') || '';
-        } else {
-          eventTick = chatEvent.tick || chatEvent.tick_num || chatEvent.t || 0;
-          playerName = chatEvent.user_name || chatEvent.player_name || chatEvent.name || 'Unknown';
-          message = chatEvent.text || chatEvent.message || chatEvent.msg || '';
-        }
-        
-        if (eventTick === 0 || !message) return;
-        
-        if (!eventsByTick.has(eventTick)) {
-          eventsByTick.set(eventTick, []);
-        }
-        
-        const chatGameEvent: GameEvent = {
-          type: 'chat',
-          tick: eventTick,
-          description: `${playerName}: ${message}`,
-          playerName,
-          message
-        };
-        
-        eventsByTick.get(eventTick)!.push(chatGameEvent);
-      });
-      
-      console.log(`✓ Processed ${chatEvents.length} chat messages`);
-    }
     
     // Process weapon fire events
     if (weaponFireEvents && weaponFireEvents.length > 0) {
@@ -1192,7 +1154,9 @@ export class DemoParser {
       scores: {
         ct: ctScore,
         t: tScore
-      }
+      },
+      grenades: grenadeData || [],
+      playerBlindEvents: playerBlindEvents || []
     };
   }
 
@@ -1268,7 +1232,8 @@ export class DemoParser {
       scores: {
         ct: 0,
         t: 0
-      }
+      },
+      grenades: [] // Hybrid parser doesn't extract grenades
     };
   }
 

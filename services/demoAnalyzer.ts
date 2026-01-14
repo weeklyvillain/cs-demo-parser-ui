@@ -62,11 +62,27 @@ export interface DisconnectReconnect {
   reconnectedBeforeFreezeEnd?: boolean; // True if player reconnected before freeze time ended (playing reconnect round)
 }
 
+export interface TeamFlash {
+  round: number;
+  tick: number;
+  time: number; // seconds
+  throwerId: number;
+  throwerName: string;
+  throwerTeam: Team;
+  victimId: number;
+  victimName: string;
+  victimTeam: Team;
+  flashDuration: number; // Duration in seconds that the victim was flashed
+  flashPosition: { x: number; y: number; z?: number }; // Where flashbang detonated
+  victimPosition: { x: number; y: number; z?: number }; // Where victim was when flashed
+}
+
 export interface AnalysisResults {
   afkDetections: AFKDetection[];
   teamKills: TeamKill[];
   teamDamage: TeamDamage[];
   disconnects: DisconnectReconnect[];
+  teamFlashes: TeamFlash[];
 }
 
 export interface AnalysisProgress {
@@ -155,16 +171,28 @@ export class DemoAnalyzer {
     const teamDamage = this.detectTeamDamage();
     this.reportProgress(80, `Found ${teamDamage.length} team damage events`);
     
-    // Disconnects/Reconnects (80-100%)
+    // Disconnects/Reconnects (80-90%)
     this.reportProgress(85, 'Detecting disconnects and reconnects...');
     const disconnects = this.detectDisconnects();
-    this.reportProgress(100, `Found ${disconnects.length} disconnect events`);
+    this.reportProgress(90, `Found ${disconnects.length} disconnect events`);
+
+    // Team Flashes (90-100%)
+    this.reportProgress(92, 'Detecting team flashes...');
+    let teamFlashes: TeamFlash[] = [];
+    try {
+      teamFlashes = this.detectTeamFlashes();
+    } catch (err: any) {
+      console.warn('Team flash detection failed:', err.message || err);
+      // Continue with empty array - don't break the entire analysis
+    }
+    this.reportProgress(100, `Found ${teamFlashes.length} team flash events`);
 
     return {
       afkDetections,
       teamKills,
       teamDamage,
-      disconnects
+      disconnects,
+      teamFlashes
     };
   }
 
@@ -502,9 +530,37 @@ export class DemoAnalyzer {
               r => r.startTick && frame.tick >= r.startTick && (!r.endTick || frame.tick <= r.endTick)
             );
 
+            // Skip damage events that occur after round end (HP might have been reset)
+            if (round && round.endTick && frame.tick > round.endTick) {
+              continue;
+            }
+
             // Calculate HP: current HP (after damage) + damage = initial HP (before damage)
             const finalHP = victimInfo.hp; // HP after damage
             const initialHP = finalHP + event.damage; // HP before damage
+
+            // Validate HP values - they should be reasonable
+            // initialHP should be <= 100 (max HP), and damage should be positive
+            if (initialHP > 100 || event.damage <= 0) {
+              // This might be a round boundary issue - skip it
+              continue;
+            }
+
+            // Additional validation: if finalHP is 100 and damage > 0, this might be a round reset issue
+            // Only allow this if we're very early in the round (within first 5 seconds)
+            if (finalHP === 100 && event.damage > 0 && round) {
+              const roundStartTime = round.startTick ? round.startTick / tickRate : 0;
+              const timeSinceRoundStart = frame.time - roundStartTime;
+              // If it's more than 5 seconds into the round and HP is 100, this is likely a reset issue
+              if (timeSinceRoundStart > 5) {
+                continue;
+              }
+            }
+
+            // Ensure damage is positive (can't heal from utility damage)
+            if (event.damage <= 0) {
+              continue;
+            }
 
             teamDamage.push({
               round: round?.number || 0,
@@ -587,6 +643,12 @@ export class DemoAnalyzer {
         const finalHP = group[group.length - 1].finalHP ?? 0;
         const totalDamage = initialHP - finalHP; // Calculate from HP difference, not sum of individual damages
         
+        // Validate: damage should be positive, initialHP should be <= 100, finalHP should be >= 0
+        if (totalDamage <= 0 || initialHP > 100 || finalHP < 0) {
+          // Skip invalid damage groups (likely round boundary issues)
+          continue;
+        }
+        
         // Get unique weapons (remove duplicates)
         const weapons = [...new Set(group.map(d => d.weapon).filter(Boolean))];
         
@@ -607,8 +669,12 @@ export class DemoAnalyzer {
           groupId: undefined // No longer using groupId for display
         });
       } else {
-        // Single event, keep as is
-        combinedDamage.push(firstDamage);
+        // Single event - validate before adding
+        if (firstDamage.damage > 0 && 
+            firstDamage.initialHP !== undefined && firstDamage.initialHP <= 100 &&
+            firstDamage.finalHP !== undefined && firstDamage.finalHP >= 0) {
+          combinedDamage.push(firstDamage);
+        }
       }
     }
 
@@ -908,6 +974,203 @@ export class DemoAnalyzer {
     disconnects.sort((a, b) => a.disconnectTime - b.disconnectTime);
     
     return disconnects;
+  }
+
+  /**
+   * Detect team flashes (friendly flashbangs)
+   * Uses only player_blind events which contain all needed information (victim, thrower, duration, position)
+   */
+  private detectTeamFlashes(): TeamFlash[] {
+    const teamFlashes: TeamFlash[] = [];
+    
+    try {
+      const playerBlinds = this.demoFile.playerBlindEvents || [];
+      
+      if (playerBlinds.length === 0) {
+        console.log('No player_blind events available for team flash detection');
+        return teamFlashes;
+      }
+
+      console.log(`Processing ${playerBlinds.length} player_blind events`);
+      
+      // Log sample event for debugging
+      if (playerBlinds.length > 0) {
+        const firstBlind = playerBlinds[0];
+        if (firstBlind instanceof Map) {
+          console.log('Sample player_blind (Map):', Array.from(firstBlind.entries()));
+        } else {
+          console.log('Sample player_blind (Object):', Object.keys(firstBlind), firstBlind);
+        }
+      }
+
+      const tickRate = this.demoFile.tickRate;
+      
+      // Process each player_blind event
+      for (const blindEvent of playerBlinds) {
+        try {
+          // Extract blind event data - player_blind events should contain thrower/attacker info
+          let blindTick = 0;
+          let victimName = '';
+          let victimId: number | undefined;
+          let throwerName = '';
+          let throwerId: number | undefined;
+          let flashDuration = 0;
+          let flashPosition: { x: number; y: number; z?: number } | undefined;
+          
+          if (blindEvent instanceof Map) {
+            blindTick = blindEvent.get('tick') || blindEvent.get('tick_num') || 0;
+            victimName = blindEvent.get('user_name') || blindEvent.get('player_name') || blindEvent.get('victim_name') || '';
+            victimId = blindEvent.get('user_id') || blindEvent.get('player_id') || blindEvent.get('victim_id');
+            throwerName = blindEvent.get('attacker_name') || blindEvent.get('thrower_name') || blindEvent.get('user_name') || '';
+            throwerId = blindEvent.get('attacker_id') || blindEvent.get('thrower_id') || blindEvent.get('user_id');
+            flashDuration = blindEvent.get('blind_duration') || blindEvent.get('flash_duration') || blindEvent.get('duration') || 0;
+            const x = blindEvent.get('x') || blindEvent.get('X') || blindEvent.get('flash_x');
+            const y = blindEvent.get('y') || blindEvent.get('Y') || blindEvent.get('flash_y');
+            const z = blindEvent.get('z') || blindEvent.get('Z') || blindEvent.get('flash_z');
+            if (x !== undefined && y !== undefined && x !== null && y !== null) {
+              flashPosition = { x, y, z };
+            }
+          } else {
+            blindTick = blindEvent.tick || blindEvent.tick_num || 0;
+            victimName = blindEvent.user_name || blindEvent.player_name || blindEvent.victim_name || '';
+            victimId = blindEvent.user_id || blindEvent.player_id || blindEvent.victim_id;
+            throwerName = blindEvent.attacker_name || blindEvent.thrower_name || blindEvent.user_name || '';
+            throwerId = blindEvent.attacker_id || blindEvent.thrower_id || blindEvent.user_id;
+            flashDuration = blindEvent.blind_duration || blindEvent.flash_duration || blindEvent.duration || 0;
+            const x = blindEvent.x || blindEvent.X || blindEvent.flash_x;
+            const y = blindEvent.y || blindEvent.Y || blindEvent.flash_y;
+            const z = blindEvent.z || blindEvent.Z || blindEvent.flash_z;
+            if (x !== undefined && y !== undefined && x !== null && y !== null) {
+              flashPosition = { x, y, z };
+            }
+          }
+          
+          // Filter out flashes shorter than 1 second (not significant team flashes)
+          if (blindTick === 0 || flashDuration <= 0 || flashDuration < 1.0) {
+            continue;
+          }
+          
+          // Skip if no thrower information (can't determine if it's a team flash)
+          if (!throwerName && throwerId === undefined) {
+            continue;
+          }
+          
+          // Skip if victim and thrower are the same (self-flash, not a team flash)
+          if (victimName === throwerName || (victimId !== undefined && throwerId !== undefined && victimId === throwerId)) {
+            continue;
+          }
+          
+          // Find victim and thrower info from frames
+          let victimTeam: Team | undefined;
+          let victimIdFinal: number | undefined = victimId;
+          let victimPosition: { x: number; y: number; z?: number } | undefined;
+          let throwerTeam: Team | undefined;
+          let throwerIdFinal: number | undefined = throwerId;
+          
+          // Try to find victim and thrower in frames
+          for (const frame of this.demoFile.frames) {
+            if (frame.tick >= blindTick - 5 && frame.tick <= blindTick) {
+              // Find victim
+              if (!victimTeam) {
+                const victim = frame.players.find(p => 
+                  p.name === victimName || 
+                  (victimId !== undefined && p.id === victimId)
+                );
+                if (victim) {
+                  victimTeam = victim.team;
+                  victimIdFinal = victim.id;
+                  victimPosition = victim.position;
+                }
+              }
+              
+              // Find thrower
+              if (!throwerTeam) {
+                const thrower = frame.players.find(p => 
+                  p.name === throwerName || 
+                  (throwerId !== undefined && p.id === throwerId)
+                );
+                if (thrower) {
+                  throwerTeam = thrower.team;
+                  throwerIdFinal = thrower.id;
+                }
+              }
+              
+              if (victimTeam && throwerTeam) {
+                break;
+              }
+            }
+          }
+          
+          // Check if victim and thrower are on the same team (team flash)
+          // Also filter out flashes shorter than 1 second (not significant team flashes)
+          if (victimTeam && throwerTeam && victimTeam === throwerTeam && victimTeam !== Team.SPECTATOR && flashDuration >= 1.0) {
+            // Find which round this flash occurred in
+            const round = this.demoFile.rounds.find(
+              r => r.startTick && blindTick >= r.startTick && (!r.endTick || blindTick <= r.endTick)
+            );
+            
+            // Find frame time for this tick
+            const frame = this.demoFile.frames.find(f => f.tick === blindTick);
+            const frameTime = frame ? frame.time : blindTick / tickRate;
+            
+            teamFlashes.push({
+              round: round?.number || 0,
+              tick: blindTick,
+              time: frameTime,
+              throwerId: throwerIdFinal || 0,
+              throwerName: throwerName || 'Unknown',
+              throwerTeam: throwerTeam,
+              victimId: victimIdFinal || 0,
+              victimName: victimName,
+              victimTeam: victimTeam,
+              flashDuration: flashDuration,
+              flashPosition: flashPosition || { x: 0, y: 0 },
+              victimPosition: victimPosition || { x: 0, y: 0 }
+            });
+          }
+        } catch (err: any) {
+          console.warn('Error processing player_blind event:', err);
+          continue;
+        }
+      }
+      
+      console.log(`Detected ${teamFlashes.length} team flash events from ${playerBlinds.length} player_blind events`);
+    
+      // Deduplicate - same thrower-victim pair within a short time window (1 second) is likely the same flash
+    const deduplicated: TeamFlash[] = [];
+    const processed = new Set<string>();
+    const DEDUP_TIME_WINDOW = 1; // seconds
+    
+    teamFlashes.sort((a, b) => {
+      if (a.time !== b.time) return a.time - b.time;
+      return a.tick - b.tick;
+    });
+    
+    for (const flash of teamFlashes) {
+      const key = `${flash.throwerId}-${flash.victimId}-${flash.round}`;
+      const lastFlash = deduplicated.find(f => 
+        f.throwerId === flash.throwerId && 
+        f.victimId === flash.victimId &&
+        f.round === flash.round &&
+        Math.abs(f.time - flash.time) < DEDUP_TIME_WINDOW
+      );
+      
+      if (!lastFlash) {
+        deduplicated.push(flash);
+      } else {
+        // Keep the one with higher flashDuration (more flashed)
+        if (flash.flashDuration > lastFlash.flashDuration) {
+          const index = deduplicated.indexOf(lastFlash);
+          deduplicated[index] = flash;
+        }
+      }
+    }
+    
+      return deduplicated;
+    } catch (err: any) {
+      console.warn('Error in detectTeamFlashes:', err);
+      return [];
+    }
   }
 }
 

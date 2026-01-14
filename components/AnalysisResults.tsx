@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { AnalysisResults as AnalysisResultsType, AFKDetection, TeamKill, TeamDamage, DisconnectReconnect } from '../services/demoAnalyzer';
+import { AnalysisResults as AnalysisResultsType, AFKDetection, TeamKill, TeamDamage, DisconnectReconnect, TeamFlash } from '../services/demoAnalyzer';
 import { Team, DemoFile } from '../types';
-import { Skull, Zap, Clock, Users, WifiOff, Copy, Check, ChevronDown, ChevronUp, Info, Shield, ArrowUpDown } from 'lucide-react';
+import { Skull, Zap, Clock, Users, WifiOff, Copy, Check, ChevronDown, ChevronUp, Info, Shield, ArrowUpDown, Target, Heart, Timer, Award, AlertCircle, Activity, Move, Flag } from 'lucide-react';
 import { useDemoStore } from '../store/useDemoStore';
+import { FlashbangIcon, MolotovIcon, HEIcon, HeadshotIcon, DamageIcon } from './CustomIcons';
 
 interface AnalysisResultsProps {
   results: AnalysisResultsType;
@@ -13,22 +14,26 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
   const { demoFile } = useDemoStore();
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
   const [afkThreshold, setAfkThreshold] = useState<number>(8); // Default 8 seconds
+  const [flashDurationThreshold, setFlashDurationThreshold] = useState<number>(4); // Default 4 seconds
   const [expandedSections, setExpandedSections] = useState({
     afk: true,
     teamKills: true,
     teamDamage: true,
-    disconnects: true
+    disconnects: true,
+    teamFlashes: true
   });
   const [sortBy, setSortBy] = useState<{
     afk: 'alphabetical' | 'round';
     teamKills: 'alphabetical' | 'round';
     teamDamage: 'alphabetical' | 'round' | 'damage';
     disconnects: 'alphabetical' | 'round';
+    teamFlashes: 'alphabetical' | 'round' | 'duration';
   }>({
     afk: 'alphabetical',
     teamKills: 'alphabetical',
     teamDamage: 'damage',
-    disconnects: 'alphabetical'
+    disconnects: 'alphabetical',
+    teamFlashes: 'duration'
   });
 
   const toggleSection = (section: keyof typeof expandedSections) => {
@@ -186,7 +191,7 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
   return (
     <div style={{ backgroundColor: 'var(--color-bg-primary)' }} className="flex flex-col gap-6 p-6 h-full overflow-y-auto">
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-3">
         <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
           <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
             <Clock size={16} />
@@ -218,6 +223,14 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
           </div>
           <div style={{ color: 'var(--color-status-neutral)' }} className="text-3xl font-bold mb-1">{results.disconnects.length}</div>
           <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Player disconnection events</div>
+        </div>
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
+          <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
+            <FlashbangIcon size={16} color="var(--color-accent-primary)" />
+            <span className="text-sm font-medium">Team Flashes</span>
+          </div>
+          <div style={{ color: 'var(--color-accent-primary)' }} className="text-3xl font-bold mb-1">{results.teamFlashes?.length || 0}</div>
+          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Friendly flashbang detonations</div>
         </div>
       </div>
 
@@ -340,23 +353,44 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                           className="rounded p-2"
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span style={{ color: 'var(--color-text-secondary)' }} className="text-xs">Round {afk.round}</span>
-                              {getTeamBadge(afk.team)}
-                              <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">
-                                {afk.afkDuration.toFixed(1)}s AFK
-                              </span>
-                              {afk.diedWhileAFK && (
-                                <span style={{ color: 'var(--color-status-afk-died)' }} className="flex items-center gap-1 text-xs font-semibold">
-                                  <Skull size={12} />
-                                  Died while AFK
-                                </span>
-                              )}
-                              {afk.timeToFirstMovement !== undefined && !afk.diedWhileAFK && (
-                                <span style={{ color: 'var(--color-status-afk)' }} className="text-xs">
-                                  • Moved after {afk.timeToFirstMovement.toFixed(1)}s
-                                </span>
-                              )}
+                          <div className="flex items-center gap-2">
+                            <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
+                            <span style={{ color: 'var(--color-text-secondary)' }} className="text-xs">Round {afk.round}</span>
+                            {getTeamBadge(afk.team)}
+                            {afk.diedWhileAFK ? (
+                              <TooltipIcon
+                                icon={
+                                  <span style={{ color: 'var(--color-status-afk-died)' }} className="flex items-center gap-1 text-xs font-semibold">
+                                    <Skull size={12} />
+                                    Died while AFK
+                                  </span>
+                                }
+                                tooltip="Player died while being AFK, ending the AFK period"
+                                color="var(--color-status-afk-died)"
+                              />
+                            ) : afk.timeToFirstMovement !== undefined ? (
+                              <TooltipIcon
+                                icon={
+                                  <span style={{ color: 'var(--color-status-afk)' }} className="flex items-center gap-1 text-xs">
+                                    <Move size={12} />
+                                    Moved
+                                  </span>
+                                }
+                                tooltip="Player started moving, ending the AFK period"
+                                color="var(--color-status-afk)"
+                              />
+                            ) : (
+                              <TooltipIcon
+                                icon={
+                                  <span style={{ color: 'var(--color-text-muted)' }} className="flex items-center gap-1 text-xs">
+                                    <Flag size={12} />
+                                    Round ended
+                                  </span>
+                                }
+                                tooltip="Player remained AFK until the round ended"
+                                color="var(--color-text-muted)"
+                              />
+                            )}
                             </div>
                             <button
                               onClick={() => copyToClipboard(commands, commandId)}
@@ -375,8 +409,23 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                               )}
                             </button>
                           </div>
-                          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">
-                            Reason: {afk.reason === 'both' ? 'No movement and no actions' : afk.reason === 'no_movement' ? 'No movement' : 'No actions'}
+                          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
+                            <span>{afk.afkDuration.toFixed(1)}s AFK</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
+                            <span>{(() => {
+                              // Calculate time from startAfkTick (freezeEndTick) - when AFK period started
+                              const startTick = afk.startAfkTick || afk.freezeEndTick;
+                              if (startTick !== undefined && demoFile?.tickRate) {
+                                const startTime = startTick / demoFile.tickRate;
+                                // Try to find the frame for more accurate time
+                                const frame = demoFile.frames.find(f => f.tick === startTick);
+                                return formatTime(frame ? frame.time : startTime);
+                              }
+                              return 'N/A';
+                            })()}</span>
                           </div>
                         </div>
                       );
@@ -486,15 +535,26 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                 </div>
                 
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-3 text-xs">
-                    <span style={{ color: 'var(--color-text-secondary)' }}>Time:</span>
-                    <span style={{ color: 'var(--color-text-primary)' }}>{formatTime(tk.time)}</span>
+                  <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
+                    <span>{formatTime(tk.time)}</span>
                   </div>
                   <div style={{ color: 'var(--color-text-muted)' }} className="flex items-center gap-2 text-xs">
+                    <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
                     <span>Round {tk.round}</span>
                     <span>•</span>
+                    {tk.weapon.toLowerCase().includes('he') || tk.weapon.toLowerCase().includes('grenade') ? (
+                      <HEIcon size={12} color="var(--color-text-muted)" />
+                    ) : (
+                      <Target size={12} style={{ color: 'var(--color-text-muted)' }} />
+                    )}
                     <span>{tk.weapon}</span>
-                    {tk.isHeadshot && <span style={{ color: 'var(--color-status-afk-died)' }}>• Headshot</span>}
+                    {tk.isHeadshot && (
+                      <>
+                        <HeadshotIcon size={12} color="var(--color-status-afk-died)" />
+                        <span style={{ color: 'var(--color-status-afk-died)' }}>Headshot</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -571,7 +631,6 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
             <div className="flex flex-wrap gap-4" style={{ maxHeight: '64rem', overflowY: 'auto', scrollbarGutter: 'stable' }}>
             {sortedTeamDamage.map((td, idx) => {
               const commandId = `td-${idx}`;
-              const commands = generateConsoleCommands(td.tick, td.victimName);
               return (
               <div 
                 key={idx} 
@@ -590,45 +649,80 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                     <span style={getTeamColor(td.victimTeam)} className="font-medium">{td.victimName}</span>
                     {getTeamBadge(td.attackerTeam)}
                   </div>
-                  <button
-                    onClick={() => copyToClipboard(commands, commandId)}
-                    style={{ backgroundColor: 'transparent' }}
-                    className="p-1.5 rounded transition-colors flex-shrink-0 hover:opacity-70"
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                    title="Copy console commands"
-                  >
-                    {copiedCommand === commandId ? (
-                      <Check size={14} style={{ color: 'var(--color-accent-primary)' }} />
-                    ) : (
-                      <Copy size={14} style={{ color: 'var(--color-text-muted)' }} />
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        const attackerCommands = generateConsoleCommands(td.tick, td.attackerName);
+                        copyToClipboard(attackerCommands, `${commandId}-attacker`);
+                      }}
+                      style={{ 
+                        backgroundColor: copiedCommand === `${commandId}-attacker` ? 'var(--color-accent-primary)' : 'var(--color-bg-elevated)',
+                        color: copiedCommand === `${commandId}-attacker` ? 'var(--color-bg-primary)' : 'var(--color-text-secondary)'
+                      }}
+                      className="px-2 py-1 rounded text-xs flex items-center gap-1.5 transition-colors hover:opacity-80"
+                      title={`Copy console commands for ${td.attackerName}`}
+                    >
+                      {copiedCommand === `${commandId}-attacker` ? (
+                        <Check size={12} />
+                      ) : (
+                        <Copy size={12} />
+                      )}
+                      <span className="font-medium">Attacker</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const victimCommands = generateConsoleCommands(td.tick, td.victimName);
+                        copyToClipboard(victimCommands, `${commandId}-victim`);
+                      }}
+                      style={{ 
+                        backgroundColor: copiedCommand === `${commandId}-victim` ? 'var(--color-accent-primary)' : 'var(--color-bg-elevated)',
+                        color: copiedCommand === `${commandId}-victim` ? 'var(--color-bg-primary)' : 'var(--color-text-secondary)'
+                      }}
+                      className="px-2 py-1 rounded text-xs flex items-center gap-1.5 transition-colors hover:opacity-80"
+                      title={`Copy console commands for ${td.victimName}`}
+                    >
+                      {copiedCommand === `${commandId}-victim` ? (
+                        <Check size={12} />
+                      ) : (
+                        <Copy size={12} />
+                      )}
+                      <span className="font-medium">Victim</span>
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-3 text-xs">
-                    <span style={{ color: 'var(--color-text-secondary)' }}>Damage:</span>
-                    {td.initialHP !== undefined && td.finalHP !== undefined ? (
-                      <span style={{ color: 'var(--color-accent-primary)' }} className="font-semibold">
-                        {td.initialHP} → {td.finalHP} HP ({td.damage} dmg)
-                      </span>
-                    ) : (
-                      <span style={{ color: 'var(--color-accent-primary)' }} className="font-semibold">{td.damage} HP</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span style={{ color: 'var(--color-text-secondary)' }}>Time:</span>
-                    <span style={{ color: 'var(--color-text-primary)' }}>{formatTime(td.time)}</span>
-                  </div>
                   <div style={{ color: 'var(--color-text-muted)' }} className="flex items-center gap-2 text-xs">
+                    <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
                     <span>Round {td.round}</span>
                     {td.weapon && (
                       <>
                         <span>•</span>
+                        {td.weapon.toLowerCase().includes('molotov') || td.weapon.toLowerCase().includes('inferno') ? (
+                          <MolotovIcon size={12} color="var(--color-status-afk-died)" />
+                        ) : td.weapon.toLowerCase().includes('he') || td.weapon.toLowerCase().includes('grenade') ? (
+                          <HEIcon size={12} color="var(--color-text-muted)" />
+                        ) : (
+                          <Target size={12} style={{ color: 'var(--color-text-muted)' }} />
+                        )}
                         <span>{mapWeaponName(td.weapon)}</span>
                       </>
                     )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <DamageIcon size={12} color="#d96b2b" />
+                    <span style={{ color: 'var(--color-text-secondary)' }}>Damage:</span>
+                    {td.initialHP !== undefined && td.finalHP !== undefined ? (
+                      <span style={{ color: '#d96b2b' }} className="font-semibold">
+                        {td.initialHP} → {td.finalHP} HP ({td.damage} dmg)
+                      </span>
+                    ) : (
+                      <span style={{ color: '#d96b2b' }} className="font-semibold">{td.damage} HP</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
+                    <span>{formatTime(td.time)}</span>
                   </div>
                 </div>
               </div>
@@ -708,9 +802,12 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                 </div>
                 
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-xs">
+                    <WifiOff size={12} style={{ color: 'var(--color-status-neutral)' }} />
                     <span style={{ color: 'var(--color-text-secondary)' }}>Disconnected:</span>
+                    <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
                     <span style={{ color: 'var(--color-status-neutral)' }} className="font-medium">Round {dc.disconnectRound}</span>
+                    <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
                     <span style={{ color: 'var(--color-text-muted)' }}>at {formatTime(dc.disconnectTime)}</span>
                     {dc.diedBeforeDisconnect && (
                       <TooltipIcon
@@ -723,9 +820,12 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                   
                   {dc.reconnectTime ? (
                     <>
-                      <div className="flex items-center gap-3 text-xs">
+                      <div className="flex items-center gap-2 text-xs">
+                        <Users size={12} style={{ color: 'var(--color-accent-primary)' }} />
                         <span style={{ color: 'var(--color-text-secondary)' }}>Reconnected:</span>
+                        <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
                         <span style={{ color: 'var(--color-accent-primary)' }} className="font-medium">Round {dc.reconnectRound || '?'}</span>
+                        <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
                         <span style={{ color: 'var(--color-text-muted)' }}>at {formatTime(dc.reconnectTime)}</span>
                         {dc.reconnectedBeforeFreezeEnd && (
                           <TooltipIcon
@@ -736,13 +836,15 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                         )}
                       </div>
                       {dc.duration && (
-                        <div className="flex items-center gap-3 text-xs">
+                        <div className="flex items-center gap-2 text-xs">
+                          <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
                           <span style={{ color: 'var(--color-text-secondary)' }}>Duration:</span>
                           <span style={{ color: 'var(--color-text-primary)' }}>{dc.duration.toFixed(1)}s</span>
                         </div>
                       )}
                       {dc.roundsMissed !== undefined && dc.roundsMissed > 0 && (
-                        <div className="flex items-center gap-3 text-xs">
+                        <div className="flex items-center gap-2 text-xs">
+                          <AlertCircle size={12} style={{ color: 'var(--color-status-afk-died)' }} />
                           <span style={{ color: 'var(--color-text-secondary)' }}>Rounds missed:</span>
                           <span style={{ color: 'var(--color-status-afk)' }} className="font-semibold">{dc.roundsMissed} round{dc.roundsMissed !== 1 ? 's' : ''}</span>
                         </div>
@@ -750,18 +852,21 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                     </>
                   ) : (
                     <>
-                      <div className="flex items-center gap-3 text-xs">
+                      <div className="flex items-center gap-2 text-xs">
+                        <AlertCircle size={12} style={{ color: 'var(--color-status-afk-died)' }} />
                         <span style={{ color: 'var(--color-text-secondary)' }}>Status:</span>
                         <span style={{ color: 'var(--color-status-afk-died)' }} className="font-semibold">Never reconnected</span>
                       </div>
                       {dc.duration && (
-                        <div className="flex items-center gap-3 text-xs">
+                        <div className="flex items-center gap-2 text-xs">
+                          <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
                           <span style={{ color: 'var(--color-text-secondary)' }}>Offline for:</span>
                           <span style={{ color: 'var(--color-text-primary)' }}>{dc.duration.toFixed(1)}s</span>
                         </div>
                       )}
                       {dc.roundsMissed !== undefined && dc.roundsMissed > 0 && (
-                        <div className="flex items-center gap-3 text-xs">
+                        <div className="flex items-center gap-2 text-xs">
+                          <AlertCircle size={12} style={{ color: 'var(--color-status-afk-died)' }} />
                           <span style={{ color: 'var(--color-text-secondary)' }}>Rounds missed:</span>
                           <span style={{ color: 'var(--color-status-afk-died)' }} className="font-semibold">{dc.roundsMissed} round{dc.roundsMissed !== 1 ? 's' : ''}</span>
                         </div>
@@ -778,12 +883,176 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
         </div>
       )}
 
+      {/* Team Flashes */}
+      {results.teamFlashes && results.teamFlashes.length > 0 && (
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => toggleSection('teamFlashes')}
+              style={{ color: 'var(--color-text-primary)' }}
+              className="flex items-center gap-2 text-lg font-semibold transition-colors hover:opacity-80"
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-accent-primary)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-primary)'}
+            >
+              <FlashbangIcon size={18} color="var(--color-accent-primary)" />
+              Team Flashes
+              {expandedSections.teamFlashes ? (
+                <ChevronDown size={18} style={{ color: 'var(--color-text-muted)' }} />
+              ) : (
+                <ChevronUp size={18} style={{ color: 'var(--color-text-muted)' }} />
+              )}
+            </button>
+            {expandedSections.teamFlashes && (
+              <div className="flex items-center gap-3">
+                <label style={{ color: 'var(--color-text-secondary)' }} className="text-xs whitespace-nowrap">
+                  Min Duration: <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{flashDurationThreshold.toFixed(1)}s</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="0.1"
+                  value={flashDurationThreshold}
+                  onChange={(e) => setFlashDurationThreshold(Number(e.target.value))}
+                  style={{ 
+                    width: '8rem',
+                    height: '0.5rem',
+                    backgroundColor: 'var(--color-bg-tertiary)',
+                    accentColor: 'var(--color-accent-primary)'
+                  }}
+                  className="rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown size={14} style={{ color: 'var(--color-text-muted)' }} />
+                  <select
+                    value={sortBy.teamFlashes}
+                    onChange={(e) => setSortBy(prev => ({ ...prev, teamFlashes: e.target.value as 'alphabetical' | 'round' | 'duration' }))}
+                    style={{
+                      backgroundColor: 'var(--color-bg-tertiary)',
+                      color: 'var(--color-text-primary)',
+                      borderColor: 'var(--color-border-subtle)'
+                    }}
+                    className="border rounded px-2 py-1 text-xs"
+                  >
+                    <option value="duration">Duration</option>
+                    <option value="alphabetical">Alphabetical</option>
+                    <option value="round">Round</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+          {expandedSections.teamFlashes && (() => {
+            let filteredTeamFlashes = results.teamFlashes || [];
+            // Filter by flash duration threshold
+            filteredTeamFlashes = filteredTeamFlashes.filter(tf => tf.flashDuration >= flashDurationThreshold);
+            // Filter by selected players
+            if (selectedPlayers.length > 0) {
+              filteredTeamFlashes = filteredTeamFlashes.filter(tf =>
+                selectedPlayers.includes(tf.throwerName) || selectedPlayers.includes(tf.victimName)
+              );
+            }
+            
+            if (sortBy.teamFlashes === 'alphabetical') {
+              filteredTeamFlashes.sort((a, b) => {
+                const aName = `${a.throwerName} → ${a.victimName}`;
+                const bName = `${b.throwerName} → ${b.victimName}`;
+                return aName.localeCompare(bName);
+              });
+            } else if (sortBy.teamFlashes === 'round') {
+              // Sort by round (lowest first)
+              filteredTeamFlashes.sort((a, b) => a.round - b.round);
+            } else {
+              // Sort by duration (highest first)
+              filteredTeamFlashes.sort((a, b) => b.flashDuration - a.flashDuration);
+            }
+            
+            return (
+              <div className="flex flex-wrap gap-4" style={{ maxHeight: '64rem', overflowY: 'auto' }}>
+                {filteredTeamFlashes.map((flash, idx) => {
+                  const commandId = `flash-${flash.throwerId}-${flash.victimId}-${flash.tick}`;
+                  // flashDuration is in seconds, format it nicely
+                  const flashDurationFormatted = flash.flashDuration > 0 
+                    ? `${flash.flashDuration.toFixed(2)}s` 
+                    : '0s';
+                  
+                  return (
+                    <div key={idx} style={{ backgroundColor: 'var(--color-bg-tertiary)', borderColor: 'var(--color-border-subtle)', width: 'calc(50% - 0.5rem)', minWidth: '25rem' }} className="border rounded p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{flash.throwerName}</span>
+                          <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">→</span>
+                          <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{flash.victimName}</span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => {
+                              const throwerCommands = generateConsoleCommands(flash.tick, flash.throwerName);
+                              copyToClipboard(throwerCommands, `${commandId}-thrower`);
+                            }}
+                            style={{ 
+                              backgroundColor: copiedCommand === `${commandId}-thrower` ? 'var(--color-accent-primary)' : 'var(--color-bg-elevated)',
+                              color: copiedCommand === `${commandId}-thrower` ? 'var(--color-bg-primary)' : 'var(--color-text-secondary)'
+                            }}
+                            className="px-2 py-1 rounded text-xs flex items-center gap-1.5 transition-colors hover:opacity-80"
+                            title={`Copy console commands for ${flash.throwerName}`}
+                          >
+                            {copiedCommand === `${commandId}-thrower` ? (
+                              <Check size={12} />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                            <span className="font-medium">Thrower</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              const victimCommands = generateConsoleCommands(flash.tick, flash.victimName);
+                              copyToClipboard(victimCommands, `${commandId}-victim`);
+                            }}
+                            style={{ 
+                              backgroundColor: copiedCommand === `${commandId}-victim` ? 'var(--color-accent-primary)' : 'var(--color-bg-elevated)',
+                              color: copiedCommand === `${commandId}-victim` ? 'var(--color-bg-primary)' : 'var(--color-text-secondary)'
+                            }}
+                            className="px-2 py-1 rounded text-xs flex items-center gap-1.5 transition-colors hover:opacity-80"
+                            title={`Copy console commands for ${flash.victimName}`}
+                          >
+                            {copiedCommand === `${commandId}-victim` ? (
+                              <Check size={12} />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                            <span className="font-medium">Victim</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        <div className="flex items-center gap-2">
+                          <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span style={{ color: 'var(--color-text-muted)' }}>Round {flash.round}</span>
+                          {getTeamBadge(flash.throwerTeam)}
+                          <FlashbangIcon size={12} color="var(--color-accent-primary)" />
+                          <span style={{ color: 'var(--color-accent-primary)' }} className="font-medium">{flashDurationFormatted} flashed</span>
+                        </div>
+                        <div className="flex items-center gap-2" style={{ color: 'var(--color-text-muted)' }}>
+                          <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span>{formatTime(flash.time)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Empty State */}
-      {results.afkDetections.length === 0 && results.teamKills.length === 0 && results.teamDamage.length === 0 && (!results.disconnects || results.disconnects.length === 0) && (
+      {results.afkDetections.length === 0 && results.teamKills.length === 0 && results.teamDamage.length === 0 && (!results.disconnects || results.disconnects.length === 0) && (!results.teamFlashes || results.teamFlashes.length === 0) && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <Users style={{ color: 'var(--color-text-muted)' }} className="mb-4" size={48} />
           <p style={{ color: 'var(--color-text-secondary)' }} className="text-lg font-medium">No issues detected</p>
-          <p style={{ color: 'var(--color-text-muted)' }} className="text-sm mt-2">The demo analysis found no AFK players, team kills, team damage, or disconnects.</p>
+          <p style={{ color: 'var(--color-text-muted)' }} className="text-sm mt-2">The demo analysis found no AFK players, team kills, team damage, disconnects, or team flashes.</p>
         </div>
       )}
     </div>

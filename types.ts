@@ -74,4 +74,6 @@ export interface DemoFile {
     ct: number;
     t: number;
   };
+  grenades?: any[]; // Grenade data from parseGrenades
+  playerBlindEvents?: any[]; // player_blind events
 }
