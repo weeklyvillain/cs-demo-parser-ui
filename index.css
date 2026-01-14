@@ -1,0 +1,79 @@
+/* Design Token Color System - Competitive, Minimal, Industrial */
+:root {
+  /* Core surfaces - Dark, industrial grays */
+  --color-bg-primary: #0f1114;   /* deepest background (app root) - darker for contrast */
+  --color-bg-secondary: #1a1d21;  /* panels, cards - muted dark gray */
+  --color-bg-tertiary: #25282d;   /* tables, rows, elevated surfaces - subtle elevation */
+  --color-bg-elevated: #2d3136;   /* hover, selected, outlines - minimal highlight */
+
+  /* Accent / Highlight Color - Muted steel blue-gray */
+  --color-accent-primary: #6b8ca8; /* muted steel blue, industrial feel */
+
+  /* Text Colors - Low contrast, readable */
+  --color-text-primary: #d4d7dc;
+  --color-text-secondary: #9ca3af;
+  --color-text-muted: #6b7280;
+
+  /* Status Colors - Muted, professional */
+  --color-status-afk: #9ca3af;      /* AFK - neutral gray */
+  --color-status-afk-died: #8b7355;  /* died while AFK - muted rust */
+  --color-status-neutral: #6b7280;
+  --color-status-success: #6b8ca8;   /* success states - steel blue */
+  --color-status-error: #8b7355;     /* error states - muted rust */
+
+  /* Team Colors - Muted, professional */
+  --color-team-ct: #5b7fa8;         /* CT - muted steel blue */
+  --color-team-t: #a67c52;          /* T - muted rust/amber */
+
+  /* Borders / Dividers - Very subtle */
+  --color-border-subtle: #1f2327;
+  --color-border-strong: #2d3136;
+}
+
+/* Apply theme to root */
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+/* Utility classes for theme colors */
+.bg-primary { background-color: var(--color-bg-primary); }
+.bg-secondary { background-color: var(--color-bg-secondary); }
+.bg-tertiary { background-color: var(--color-bg-tertiary); }
+.bg-elevated { background-color: var(--color-bg-elevated); }
+
+.text-primary { color: var(--color-text-primary); }
+.text-secondary { color: var(--color-text-secondary); }
+.text-muted { color: var(--color-text-muted); }
+
+.text-accent { color: var(--color-accent-primary); }
+.text-status-afk { color: var(--color-status-afk); }
+.text-status-afk-died { color: var(--color-status-afk-died); }
+.text-status-neutral { color: var(--color-status-neutral); }
+.text-status-success { color: var(--color-status-success); }
+.text-status-error { color: var(--color-status-error); }
+
+.text-team-ct { color: var(--color-team-ct); }
+.text-team-t { color: var(--color-team-t); }
+
+.border-subtle { border-color: var(--color-border-subtle); }
+.border-strong { border-color: var(--color-border-strong); }
+
+/* Additional custom styles */
+/* Tailwind CSS is loaded via CDN in index.html */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
