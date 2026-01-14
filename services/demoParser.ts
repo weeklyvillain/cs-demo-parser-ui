@@ -169,14 +169,16 @@ export class DemoParser {
     let roundFreezeEndEvents: any[] = [];
     const allEventTicks = new Set<number>(); // Collect all ticks that have events for efficient parsing
     
-    // Declare weaponFireEvents, damageEvents, and playerBlindEvents in outer scope so they're accessible later
+    // Declare weaponFireEvents, damageEvents, playerBlindEvents, disconnectEvents, and connectEvents in outer scope so they're accessible later
     let weaponFireEvents: any[] = [];
     let damageEvents: any[] = [];
     let playerBlindEvents: any[] = [];
+    let disconnectEvents: any[] = [];
+    let connectEvents: any[] = [];
     
     try {
       console.log('Extracting events...');
-      const allEvents = parser.parseEvents(buffer, ["player_death", "round_start", "round_begin", "round_end", "round_officially_ended", "cs_round_start", "round_freeze_end", "weapon_fire", "player_hurt", "damage", "player_blind"]);
+      const allEvents = parser.parseEvents(buffer, ["player_death", "round_start", "round_begin", "round_end", "round_officially_ended", "cs_round_start", "round_freeze_end", "weapon_fire", "player_hurt", "damage", "player_blind", "player_disconnect", "player_connect"]);
       console.log(`✓ Extracted events, type: ${Array.isArray(allEvents) ? 'Array' : allEvents instanceof Map ? 'Map' : typeof allEvents}, length/size: ${Array.isArray(allEvents) ? allEvents.length : allEvents instanceof Map ? allEvents.size : 'N/A'}`);
       
       // Helper function to extract tick from event
@@ -255,10 +257,12 @@ export class DemoParser {
         }
       }
       
-      // Extract weapon fire events, damage events, and player blind events (assign to outer scope variable)
+      // Extract weapon fire events, damage events, player blind events, disconnect events, and connect events (assign to outer scope variable)
       weaponFireEvents = [];
       damageEvents = [];
       playerBlindEvents = [];
+      disconnectEvents = [];
+      connectEvents = [];
       if (Array.isArray(allEvents)) {
         allEvents.forEach((event: any) => {
           let eventName = '';
@@ -274,6 +278,10 @@ export class DemoParser {
             damageEvents.push(event);
           } else if (eventName === 'player_blind') {
             playerBlindEvents.push(event);
+          } else if (eventName === 'player_disconnect') {
+            disconnectEvents.push(event);
+          } else if (eventName === 'player_connect') {
+            connectEvents.push(event);
           }
         });
       } else if (allEvents instanceof Map) {
@@ -296,6 +304,18 @@ export class DemoParser {
               playerBlindEvents.push(...value);
             } else {
               playerBlindEvents.push(value);
+            }
+          } else if (eventName.includes('player_disconnect')) {
+            if (Array.isArray(value)) {
+              disconnectEvents.push(...value);
+            } else {
+              disconnectEvents.push(value);
+            }
+          } else if (eventName.includes('player_connect')) {
+            if (Array.isArray(value)) {
+              connectEvents.push(...value);
+            } else {
+              connectEvents.push(value);
             }
           }
         }
@@ -1156,7 +1176,9 @@ export class DemoParser {
         t: tScore
       },
       grenades: grenadeData || [],
-      playerBlindEvents: playerBlindEvents || []
+      playerBlindEvents: playerBlindEvents || [],
+      disconnectEvents: disconnectEvents || [],
+      connectEvents: connectEvents || []
     };
   }
 

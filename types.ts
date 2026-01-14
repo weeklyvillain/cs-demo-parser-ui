@@ -76,4 +76,6 @@ export interface DemoFile {
   };
   grenades?: any[]; // Grenade data from parseGrenades
   playerBlindEvents?: any[]; // player_blind events
+  disconnectEvents?: any[]; // player_disconnect events
+  connectEvents?: any[]; // player_connect events
 }

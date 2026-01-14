@@ -683,14 +683,168 @@ export class DemoAnalyzer {
 
   /**
    * Detect player disconnects and reconnects
-   * A disconnect is detected when a player disappears from frames for more than 2 seconds
-   * A reconnect is detected when the same player reappears later
+   * Uses explicit disconnect/connect events from the demo file as primary source
+   * Falls back to frame-based detection (when player disappears for >2 seconds) if events are not available
    */
   private detectDisconnects(): DisconnectReconnect[] {
     const disconnects: DisconnectReconnect[] = [];
     const tickRate = this.demoFile.tickRate;
     
-    // Track player presence across frames
+    // Build a map of userid -> playerId, playerName, team from frames
+    // Events use userid, but we need playerId for consistency
+    const userIdToPlayerInfo = new Map<number, { playerId: number; playerName: string; team: Team }>();
+    for (const frame of this.demoFile.frames) {
+      for (const player of frame.players) {
+        if (player.team === Team.SPECTATOR) continue;
+        // Try to find userid from player data - this might not be directly available
+        // For now, we'll use player.id as userid (they're often the same)
+        // If events have different userids, we'll need to match by name
+        userIdToPlayerInfo.set(player.id, {
+          playerId: player.id,
+          playerName: player.name,
+          team: player.team
+        });
+      }
+    }
+    
+    // Process explicit disconnect/connect events if available
+    const eventBasedDisconnects = new Map<string, DisconnectReconnect>(); // key: playerId-disconnectTick
+    
+    if (this.demoFile.disconnectEvents && this.demoFile.disconnectEvents.length > 0) {
+      for (const event of this.demoFile.disconnectEvents) {
+        // Extract event data - handle both Map and object structures
+        let userId: number | undefined;
+        let playerName: string | undefined;
+        let eventTick: number | undefined;
+        
+        if (event instanceof Map) {
+          userId = event.get('userid') || event.get('user_id') || event.get('player_id') || event.get('playerid');
+          playerName = event.get('player_name') || event.get('name') || event.get('playerName');
+          eventTick = event.get('tick') || event.get('tick_num') || event.get('t');
+        } else {
+          userId = event.userid || event.user_id || event.player_id || event.playerid;
+          playerName = event.player_name || event.name || event.playerName;
+          eventTick = event.tick || event.tick_num || event.t;
+        }
+        
+        if (eventTick && (userId !== undefined || playerName)) {
+          // Find player info by userId or by name
+          let playerInfo: { playerId: number; playerName: string; team: Team } | undefined;
+          
+          if (userId !== undefined) {
+            playerInfo = userIdToPlayerInfo.get(userId);
+          }
+          
+          // If not found by userId, try to find by name
+          if (!playerInfo && playerName) {
+            for (const [uid, info] of userIdToPlayerInfo.entries()) {
+              if (info.playerName === playerName) {
+                playerInfo = info;
+                break;
+              }
+            }
+          }
+          
+          if (playerInfo) {
+            const disconnectRound = this.demoFile.rounds.find(
+              r => r.startTick && eventTick! >= r.startTick && (!r.endTick || eventTick! <= r.endTick)
+            );
+            
+            const disconnectTime = eventTick! / tickRate;
+            
+            const key = `${playerInfo.playerId}-${eventTick}`;
+            eventBasedDisconnects.set(key, {
+              playerId: playerInfo.playerId,
+              playerName: playerInfo.playerName,
+              team: playerInfo.team,
+              disconnectTick: eventTick!,
+              disconnectTime: disconnectTime,
+              disconnectRound: disconnectRound?.number || 0
+            });
+          }
+        }
+      }
+    }
+    
+    // Process connect events to mark reconnects
+    if (this.demoFile.connectEvents && this.demoFile.connectEvents.length > 0) {
+      for (const event of this.demoFile.connectEvents) {
+        let userId: number | undefined;
+        let playerName: string | undefined;
+        let eventTick: number | undefined;
+        
+        if (event instanceof Map) {
+          userId = event.get('userid') || event.get('user_id') || event.get('player_id') || event.get('playerid');
+          playerName = event.get('player_name') || event.get('name') || event.get('playerName');
+          eventTick = event.get('tick') || event.get('tick_num') || event.get('t');
+        } else {
+          userId = event.userid || event.user_id || event.player_id || event.playerid;
+          playerName = event.player_name || event.name || event.playerName;
+          eventTick = event.tick || event.tick_num || event.t;
+        }
+        
+        if (eventTick && (userId !== undefined || playerName)) {
+          // Find player info
+          let playerInfo: { playerId: number; playerName: string; team: Team } | undefined;
+          
+          if (userId !== undefined) {
+            playerInfo = userIdToPlayerInfo.get(userId);
+          }
+          
+          if (!playerInfo && playerName) {
+            for (const [uid, info] of userIdToPlayerInfo.entries()) {
+              if (info.playerName === playerName) {
+                playerInfo = info;
+                break;
+              }
+            }
+          }
+          
+          if (playerInfo) {
+            // Find the most recent disconnect for this player that hasn't been reconnected
+            let matchingDisconnect: DisconnectReconnect | undefined;
+            let latestDisconnectTick = 0;
+            
+            for (const [key, dc] of eventBasedDisconnects.entries()) {
+              if (dc.playerId === playerInfo.playerId && 
+                  !dc.reconnectTick && 
+                  dc.disconnectTick < eventTick! &&
+                  dc.disconnectTick > latestDisconnectTick) {
+                matchingDisconnect = dc;
+                latestDisconnectTick = dc.disconnectTick;
+              }
+            }
+            
+            if (matchingDisconnect) {
+              const reconnectRound = this.demoFile.rounds.find(
+                r => r.startTick && eventTick! >= r.startTick && (!r.endTick || eventTick! <= r.endTick)
+              );
+              
+              const reconnectTime = eventTick! / tickRate;
+              const duration = reconnectTime - matchingDisconnect.disconnectTime;
+              
+              matchingDisconnect.reconnectTick = eventTick!;
+              matchingDisconnect.reconnectTime = reconnectTime;
+              matchingDisconnect.reconnectRound = reconnectRound?.number;
+              matchingDisconnect.duration = duration;
+            }
+          }
+        }
+      }
+    }
+    
+    // Add event-based disconnects to the results
+    for (const dc of eventBasedDisconnects.values()) {
+      disconnects.push(dc);
+    }
+    
+    // Track which players already have event-based disconnects (to avoid duplicates)
+    const playersWithEventDisconnects = new Set<number>();
+    for (const dc of eventBasedDisconnects.values()) {
+      playersWithEventDisconnects.add(dc.playerId);
+    }
+    
+    // Track player presence across frames (for frame-based detection fallback)
     // Map: playerId -> { lastSeenTick, lastSeenTime, playerName, team, isDisconnected, disconnectTick?, disconnectTime?, wasAliveAtDisconnect? }
     const playerState = new Map<number, {
       lastSeenTick: number;
@@ -895,13 +1049,14 @@ export class DemoAnalyzer {
       }
       
       // Check for players who were seen before but are not in this frame
+      // Skip players that already have event-based disconnects
       for (const [playerId, state] of playerState.entries()) {
-        if (!currentPlayerIds.has(playerId) && !state.isDisconnected) {
+        if (!currentPlayerIds.has(playerId) && !state.isDisconnected && !playersWithEventDisconnects.has(playerId)) {
           // Player was here before but not now - check if it's been long enough to be a disconnect
           const ticksSinceLastSeen = frame.tick - state.lastSeenTick;
           
           if (ticksSinceLastSeen >= DISCONNECT_THRESHOLD_TICKS) {
-            // This is a disconnect
+            // This is a disconnect (frame-based fallback)
             const disconnectRound = this.demoFile.rounds.find(
               r => r.startTick && state.lastSeenTick >= r.startTick && (!r.endTick || state.lastSeenTick <= r.endTick)
             );
@@ -932,6 +1087,7 @@ export class DemoAnalyzer {
     
     // Final pass: mark any remaining disconnects that never reconnected
     // (players who disconnected and never came back)
+    // Process both frame-based and event-based disconnects
     for (const [playerId, state] of playerState.entries()) {
       if (state.isDisconnected) {
         // Find the disconnect entry and mark it as permanent
@@ -970,10 +1126,59 @@ export class DemoAnalyzer {
       }
     }
     
-    // Sort by disconnect time
-    disconnects.sort((a, b) => a.disconnectTime - b.disconnectTime);
+    // Also process event-based disconnects that don't have all metadata filled in
+    for (const disconnectEntry of disconnects) {
+      if (!disconnectEntry.reconnectTick && (disconnectEntry.diedBeforeDisconnect === undefined || disconnectEntry.roundsMissed === undefined)) {
+        // Fill in missing metadata for event-based disconnects
+        const diedInDisconnectRound = playerDeathsByRound.get(disconnectEntry.disconnectRound)?.has(disconnectEntry.playerId) ?? false;
+        if (disconnectEntry.diedBeforeDisconnect === undefined) {
+          disconnectEntry.diedBeforeDisconnect = diedInDisconnectRound;
+        }
+        
+        if (!disconnectEntry.roundsMissed && disconnectEntry.disconnectRound) {
+          const lastRound = this.demoFile.rounds[this.demoFile.rounds.length - 1];
+          if (lastRound && lastRound.number > disconnectEntry.disconnectRound) {
+            if (diedInDisconnectRound) {
+              disconnectEntry.roundsMissed = lastRound.number - disconnectEntry.disconnectRound;
+            } else {
+              disconnectEntry.roundsMissed = lastRound.number - disconnectEntry.disconnectRound + 1;
+            }
+          } else {
+            disconnectEntry.roundsMissed = 0;
+          }
+        }
+        
+        // Fill in duration if missing
+        if (!disconnectEntry.duration) {
+          const disconnectTime = disconnectEntry.disconnectTick / tickRate;
+          disconnectEntry.duration = this.demoFile.duration - disconnectTime;
+        }
+      }
+    }
     
-    return disconnects;
+    // Filter out disconnects in the last round where the player was offline for less than 10 seconds
+    // These are likely brief network hiccups at the end of the match, not meaningful disconnects
+    const lastRound = this.demoFile.rounds.length > 0 ? this.demoFile.rounds[this.demoFile.rounds.length - 1] : null;
+    const MIN_DISCONNECT_DURATION_SECONDS = 10;
+    
+    const filteredDisconnects = disconnects.filter(dc => {
+      // Only apply the 10-second filter to disconnects in the last round
+      if (lastRound && dc.disconnectRound === lastRound.number) {
+        // If player reconnected, use the duration field
+        // If they never reconnected, duration should already be calculated (time from disconnect to end of demo)
+        if (dc.duration !== undefined && dc.duration < MIN_DISCONNECT_DURATION_SECONDS) {
+          return false; // Filter out - too brief to be meaningful (only for last round)
+        }
+      }
+      // Keep all disconnects from other rounds regardless of duration
+      // Keep disconnects in last round that lasted 10+ seconds
+      return true;
+    });
+    
+    // Sort by disconnect time
+    filteredDisconnects.sort((a, b) => a.disconnectTime - b.disconnectTime);
+    
+    return filteredDisconnects;
   }
 
   /**
