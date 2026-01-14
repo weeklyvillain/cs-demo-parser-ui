@@ -27,6 +27,7 @@ const App: React.FC = () => {
     setParsingProgress,
     setError,
     setIsParserLoaded,
+    reset: resetStore,
   } = useDemoStore();
 
   // Preload demoparser2 on mount
@@ -94,13 +95,27 @@ const App: React.FC = () => {
   };
 
   const handleReset = () => {
-    setDemoFile(null);
+    // Clear local state first
     setAnalysisResults(null);
+    setSelectedPlayers([]);
+    setIsAnalyzing(false);
+    setIsFilterOpen(false);
+    
+    // Clear parser explicitly before resetting store (parser may hold ArrayBuffer references)
+    setDemoParser(null);
+    
+    // Clear Zustand store (this releases the demoFile which holds large data like frames array)
+    resetStore();
+    
+    // Clear any remaining state
     setError(null);
     setIsParsing(false);
-    setIsAnalyzing(false);
     setParsingProgress(null);
-    setSelectedPlayers([]);
+    
+    // Force garbage collection hint
+    if (window.gc) {
+      window.gc();
+    }
   };
 
   const isUsingRealParser = isParserLoaded;
