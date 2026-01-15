@@ -1,4 +1,7 @@
 import { DemoFile, MatchFrame, Team, PlayerState } from '../types';
+import { analyzeRoundInactivity, InactivityResult, DEFAULT_MID_ROUND_AFK_CONFIG, MidRoundAfkConfig } from './midRoundAfk';
+import { detectBodyBlocking, BlockEvent, BodyBlockResult, DEFAULT_BODY_BLOCK_CONFIG } from './bodyBlocking';
+import { detectObjectiveSabotage, ObjectiveEvent, ObjectiveResult, DEFAULT_OBJECTIVE_CONFIG } from './objectiveSabotage';
 
 export interface AFKDetection {
   playerId: number;
@@ -77,12 +80,56 @@ export interface TeamFlash {
   victimPosition: { x: number; y: number; z?: number }; // Where victim was when flashed
 }
 
+export interface MidRoundInactivity {
+  playerId: number;
+  playerName: string;
+  team: Team;
+  round: number;
+  segments: Array<{
+    startTick: number;
+    endTick: number;
+    startTime: number;
+    endTime: number;
+    duration: number;
+    score: number;
+    confidence: number;
+    reason: 'no_movement_no_aim' | 'no_movement_low_aim' | 'no_actions' | 'combined';
+  }>;
+  roundScore: number;
+  flagged: boolean;
+  confidence: number;
+}
+
+export interface BodyBlocking {
+  round: number;
+  events: BlockEvent[];
+  blockScoreRound: number;
+  flagged: boolean;
+  confidence: number;
+}
+
+export interface ObjectiveSabotage {
+  round: number;
+  eventsByPlayer: Map<number, {
+    playerId: number;
+    playerName: string;
+    events: ObjectiveEvent[];
+    objectiveScoreRound: number;
+    flagged: boolean;
+    confidence: number;
+  }>;
+  allEvents: ObjectiveEvent[];
+}
+
 export interface AnalysisResults {
   afkDetections: AFKDetection[];
   teamKills: TeamKill[];
   teamDamage: TeamDamage[];
   disconnects: DisconnectReconnect[];
   teamFlashes: TeamFlash[];
+  midRoundInactivity: MidRoundInactivity[];
+  bodyBlocking: BodyBlocking[];
+  objectiveSabotage: ObjectiveSabotage[];
 }
 
 export interface AnalysisProgress {
@@ -176,7 +223,7 @@ export class DemoAnalyzer {
     const disconnects = this.detectDisconnects();
     this.reportProgress(90, `Found ${disconnects.length} disconnect events`);
 
-    // Team Flashes (90-100%)
+    // Team Flashes (90-95%)
     this.reportProgress(92, 'Detecting team flashes...');
     let teamFlashes: TeamFlash[] = [];
     try {
@@ -185,14 +232,50 @@ export class DemoAnalyzer {
       console.warn('Team flash detection failed:', err.message || err);
       // Continue with empty array - don't break the entire analysis
     }
-    this.reportProgress(100, `Found ${teamFlashes.length} team flash events`);
+    this.reportProgress(95, `Found ${teamFlashes.length} team flash events`);
+
+    // Mid-Round Inactivity (95-97%)
+    this.reportProgress(96, 'Detecting mid-round inactivity...');
+    let midRoundInactivity: MidRoundInactivity[] = [];
+    try {
+      midRoundInactivity = this.detectMidRoundInactivity();
+    } catch (err: any) {
+      console.warn('Mid-round inactivity detection failed:', err.message || err);
+      // Continue with empty array - don't break the entire analysis
+    }
+    this.reportProgress(97, `Found ${midRoundInactivity.length} mid-round inactivity detections`);
+
+    // Body Blocking (97-98%)
+    this.reportProgress(98, 'Detecting body blocking...');
+    let bodyBlocking: BodyBlocking[] = [];
+    try {
+      bodyBlocking = this.detectBodyBlocking();
+    } catch (err: any) {
+      console.warn('Body blocking detection failed:', err.message || err);
+      // Continue with empty array - don't break the entire analysis
+    }
+    this.reportProgress(98.5, `Found ${bodyBlocking.reduce((sum, b) => sum + b.events.length, 0)} body blocking events`);
+
+    // Objective Sabotage (98.5-100%)
+    this.reportProgress(99, 'Detecting objective sabotage...');
+    let objectiveSabotage: ObjectiveSabotage[] = [];
+    try {
+      objectiveSabotage = this.detectObjectiveSabotage();
+    } catch (err: any) {
+      console.warn('Objective sabotage detection failed:', err.message || err);
+      // Continue with empty array - don't break the entire analysis
+    }
+    this.reportProgress(100, `Found ${objectiveSabotage.reduce((sum, o) => sum + o.allEvents.length, 0)} objective sabotage events`);
 
     return {
       afkDetections,
       teamKills,
       teamDamage,
       disconnects,
-      teamFlashes
+      teamFlashes,
+      midRoundInactivity,
+      bodyBlocking,
+      objectiveSabotage
     };
   }
 
@@ -230,10 +313,6 @@ export class DemoAnalyzer {
       const gracePeriodTicks = Math.ceil(gracePeriodSeconds * tickRate);
       const gracePeriodEndTick = freezeEndTick + gracePeriodTicks;
       
-      // Find frame at freeze end to record initial positions
-      const freezeEndFrame = this.demoFile.frames.find(f => f.tick >= freezeEndTick);
-      if (!freezeEndFrame) continue;
-      
       // Process ALL frames from freezeEnd to roundEnd (not just after grace period)
       const allFrames = this.demoFile.frames.filter(
         f => f.tick >= freezeEndTick && f.tick <= roundEndTick
@@ -251,25 +330,39 @@ export class DemoAnalyzer {
         firstMovementTick?: number; // When player first moved (ends AFK)
         deathTick?: number; // When player died (ends AFK)
         lastStillTick: number; // Last tick where player was still
+        firstSeenTick?: number; // First tick where player was seen alive in this round
       }>();
 
-      // Initialize tracking for each player at freeze end
-      for (const player of freezeEndFrame.players) {
-        if (player.team === Team.SPECTATOR || !player.isAlive) continue;
-        playerTracking.set(player.id, {
-          player,
-          initialPosition: { x: player.position.x, y: player.position.y },
-          lastPosition: { x: player.position.x, y: player.position.y },
-          movedDuringGracePeriod: false,
-          isAFK: false, // Will be set to true if they don't move during grace period
-          lastStillTick: freezeEndTick
-        });
-      }
-
       // Process all frames from freezeEnd to roundEnd
+      // Initialize tracking for players as we encounter them (not just at freeze end)
       for (const frame of allFrames) {
         for (const currentPlayer of frame.players) {
-          const tracking = playerTracking.get(currentPlayer.id);
+          // Skip spectators
+          if (currentPlayer.team === Team.SPECTATOR) continue;
+          
+          // Get or create tracking for this player
+          let tracking = playerTracking.get(currentPlayer.id);
+          
+          // If player not tracked yet, initialize them
+          if (!tracking) {
+            // Track all players, even if they're dead when first seen
+            // They might have been alive earlier or might become alive later
+            tracking = {
+              player: currentPlayer,
+              initialPosition: { x: currentPlayer.position.x, y: currentPlayer.position.y },
+              lastPosition: { x: currentPlayer.position.x, y: currentPlayer.position.y },
+              movedDuringGracePeriod: false,
+              isAFK: false,
+              lastStillTick: frame.tick,
+              firstSeenTick: frame.tick
+            };
+            playerTracking.set(currentPlayer.id, tracking);
+            
+            // If player first appears after grace period, we'll check their movement separately
+            // Don't mark them as moved yet - they might still be AFK
+          }
+          
+          // Skip if tracking doesn't exist (shouldn't happen, but safety check)
           if (!tracking) continue;
           
           // Check if player died
@@ -313,18 +406,22 @@ export class DemoAnalyzer {
           } else {
             // Player is still - update last still tick
             tracking.lastStillTick = frame.tick;
-            
-            // If we're in grace period and player hasn't moved, they will be AFK starting at freezeEndTick
-            if (frame.tick < gracePeriodEndTick && !tracking.movedDuringGracePeriod) {
-              // Will be marked as AFK after grace period check
-            }
           }
         }
       }
 
       // After processing all frames, determine AFK status
-      // Rule: If player did NOT move during grace period, they are AFK starting at freezeEndTick
+      // Rule: If player did NOT move during grace period (or didn't appear until after), 
+      // and they don't move for a long time, they are AFK
       const MIN_AFK_THRESHOLD_SECONDS = 5;
+      
+      // Debug: Log tracking info for round 1
+      if (round.number === 1) {
+        console.log(`[AFK Debug Round 1] Tracking ${playerTracking.size} players`);
+        for (const [playerId, tracking] of playerTracking.entries()) {
+          console.log(`  Player ${tracking.player.name}: firstSeen=${tracking.firstSeenTick}, movedDuringGrace=${tracking.movedDuringGracePeriod}, firstMovement=${tracking.firstMovementTick}, death=${tracking.deathTick}`);
+        }
+      }
       
       for (const [playerId, tracking] of playerTracking.entries()) {
         // Skip players who moved during grace period - they're NOT AFK
@@ -332,8 +429,21 @@ export class DemoAnalyzer {
           continue;
         }
         
-        // Player did NOT move during grace period → they are AFK starting at freezeEndTick
-        tracking.isAFK = true;
+        // Determine when player first appeared relative to grace period
+        const firstSeenTick = tracking.firstSeenTick || freezeEndTick;
+        
+        // Determine when AFK starts:
+        // - If player was present at freeze end (or appeared during grace period), AFK starts at freezeEndTick
+        // - If player appeared after grace period, AFK starts when they first appeared (they're stationary from that point)
+        let startAfkTick: number;
+        if (firstSeenTick <= gracePeriodEndTick) {
+          // Player was present during or before grace period - AFK starts at round start
+          startAfkTick = freezeEndTick;
+        } else {
+          // Player appeared after grace period - AFK starts when they first appeared
+          // But only if they don't move for a long time after appearing
+          startAfkTick = firstSeenTick;
+        }
         
         // Determine when AFK ends:
         // 1. Player moved → endAfkTick = firstMovementTick
@@ -352,11 +462,25 @@ export class DemoAnalyzer {
         }
         
         // Calculate AFK duration
-        const startAfkTick = freezeEndTick; // AFK starts at freezeEndTick (roundStart)
         const afkDuration = (endAfkTick - startAfkTick) / tickRate;
         
         // Only report if AFK duration >= 5 seconds
         if (afkDuration >= MIN_AFK_THRESHOLD_SECONDS) {
+          // For players who appeared after grace period, make sure they were stationary for the full duration
+          // (i.e., they didn't move at all from when they appeared)
+          if (firstSeenTick > gracePeriodEndTick && tracking.firstMovementTick) {
+            // Player appeared late but moved - not AFK
+            if (round.number === 1) {
+              console.log(`[AFK Debug Round 1] Skipping ${tracking.player.name}: appeared late but moved`);
+            }
+            continue;
+          }
+          
+          // Debug: Log detection for round 1
+          if (round.number === 1) {
+            console.log(`[AFK Debug Round 1] Detected AFK: ${tracking.player.name}, duration=${afkDuration.toFixed(2)}s, startTick=${startAfkTick}, endTick=${endAfkTick}`);
+          }
+          
           detections.push({
             playerId,
             playerName: tracking.player.name,
@@ -366,7 +490,7 @@ export class DemoAnalyzer {
             freezeEndTick: round.freezeEndTick,
             afkDuration,
             timeToFirstMovement: tracking.firstMovementTick 
-              ? (tracking.firstMovementTick - freezeEndTick) / tickRate 
+              ? (tracking.firstMovementTick - startAfkTick) / tickRate 
               : undefined,
             reason: 'no_movement', // Simplified for now
             startAfkTick,
@@ -1182,6 +1306,71 @@ export class DemoAnalyzer {
   }
 
   /**
+   * Detect mid-round inactivity (AFK during active gameplay)
+   */
+  private detectMidRoundInactivity(): MidRoundInactivity[] {
+    const results: MidRoundInactivity[] = [];
+    const tickRate = this.demoFile.tickRate;
+    
+    try {
+      for (const round of this.demoFile.rounds) {
+        if (!round.freezeEndTick || !round.endTick) continue;
+        
+        // Get all events for this round
+        const roundEvents = this.demoFile.frames
+          .filter(f => f.tick >= round.freezeEndTick! && f.tick <= round.endTick!)
+          .flatMap(f => f.events || []);
+        
+        // Analyze round for inactivity
+        const roundResults = analyzeRoundInactivity(
+          round,
+          this.demoFile.frames,
+          roundEvents,
+          tickRate,
+          DEFAULT_MID_ROUND_AFK_CONFIG
+        );
+        
+        // Convert to MidRoundInactivity format
+        for (const [playerId, inactivityResult] of roundResults.entries()) {
+          if (inactivityResult.flagged && inactivityResult.segments.length > 0) {
+            // Find player team
+            const player = this.demoFile.frames
+              .find(f => f.players.some(p => p.id === playerId))
+              ?.players.find(p => p.id === playerId);
+            
+            if (player) {
+              results.push({
+                playerId,
+                playerName: inactivityResult.playerName,
+                team: player.team,
+                round: round.number,
+                segments: inactivityResult.segments.map(s => ({
+                  startTick: s.startTick,
+                  endTick: s.endTick,
+                  startTime: s.startTime,
+                  endTime: s.endTime,
+                  duration: s.duration,
+                  score: s.score,
+                  confidence: s.confidence,
+                  reason: s.reason
+                })),
+                roundScore: inactivityResult.roundScore,
+                flagged: inactivityResult.flagged,
+                confidence: inactivityResult.confidence
+              });
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('Error in detectMidRoundInactivity:', err);
+      throw err;
+    }
+    
+    return results;
+  }
+
+  /**
    * Detect team flashes (friendly flashbangs)
    * Uses only player_blind events which contain all needed information (victim, thrower, duration, position)
    */
@@ -1376,6 +1565,82 @@ export class DemoAnalyzer {
       console.warn('Error in detectTeamFlashes:', err);
       return [];
     }
+  }
+
+  /**
+   * Detect body blocking / movement griefing
+   */
+  private detectBodyBlocking(): BodyBlocking[] {
+    const results: BodyBlocking[] = [];
+    const tickRate = this.demoFile.tickRate;
+    
+    try {
+      for (const round of this.demoFile.rounds) {
+        if (!round.freezeEndTick || !round.endTick) continue;
+        
+        // Analyze round for body blocking
+        const roundResult = detectBodyBlocking(
+          round,
+          this.demoFile.frames,
+          tickRate,
+          DEFAULT_BODY_BLOCK_CONFIG
+        );
+        
+        if (roundResult.events.length > 0 || roundResult.flagged) {
+          results.push({
+            round: round.number,
+            events: roundResult.events,
+            blockScoreRound: roundResult.blockScoreRound,
+            flagged: roundResult.flagged,
+            confidence: roundResult.confidence
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('Error in detectBodyBlocking:', err);
+      throw err;
+    }
+    
+    return results;
+  }
+
+  /**
+   * Detect objective sabotage / bomb griefing
+   */
+  private detectObjectiveSabotage(): ObjectiveSabotage[] {
+    const results: ObjectiveSabotage[] = [];
+    const tickRate = this.demoFile.tickRate;
+    
+    try {
+      // Get all events
+      const allEvents = this.demoFile.frames.flatMap(f => f.events || []);
+      
+      for (const round of this.demoFile.rounds) {
+        if (!round.freezeEndTick || !round.endTick) continue;
+        
+        // Analyze round for objective sabotage
+        const roundResult = detectObjectiveSabotage(
+          round,
+          this.demoFile.frames,
+          allEvents,
+          tickRate,
+          DEFAULT_OBJECTIVE_CONFIG
+        );
+        
+        if (roundResult.allEvents.length > 0) {
+          results.push({
+            round: round.number,
+            eventsByPlayer: roundResult.eventsByPlayer,
+            allEvents: roundResult.allEvents
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('Error in detectObjectiveSabotage:', err);
+      throw err;
+    }
+    
+    return results;
   }
 }
 

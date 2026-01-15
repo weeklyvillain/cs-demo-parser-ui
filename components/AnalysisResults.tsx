@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
-import { AnalysisResults as AnalysisResultsType, AFKDetection, TeamKill, TeamDamage, DisconnectReconnect, TeamFlash } from '../services/demoAnalyzer';
+import React, { useState, useRef, useEffect } from 'react';
+import { AnalysisResults as AnalysisResultsType, AFKDetection, TeamKill, TeamDamage, DisconnectReconnect, TeamFlash, MidRoundInactivity, BodyBlocking, ObjectiveSabotage } from '../services/demoAnalyzer';
 import { Team, DemoFile } from '../types';
-import { Skull, Zap, Clock, Users, WifiOff, Copy, Check, ChevronDown, ChevronUp, Info, Shield, ArrowUpDown, Target, Heart, Timer, Award, AlertCircle, Activity, Move, Flag } from 'lucide-react';
+import { Skull, Zap, Clock, Users, WifiOff, Copy, Check, ChevronDown, ChevronUp, Info, Shield, ArrowUpDown, Target, Heart, Timer, Award, AlertCircle, Activity, Move, Flag, Ban, Bomb } from 'lucide-react';
 import { useDemoStore } from '../store/useDemoStore';
 import { FlashbangIcon, MolotovIcon, HEIcon, HeadshotIcon, DamageIcon } from './CustomIcons';
 
@@ -15,12 +15,60 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
   const [afkThreshold, setAfkThreshold] = useState<number>(8); // Default 8 seconds
   const [flashDurationThreshold, setFlashDurationThreshold] = useState<number>(4); // Default 4 seconds
+  const [teamDamageThreshold, setTeamDamageThreshold] = useState<number>(25); // Default 25 damage
+  const thresholdsInitializedRef = useRef(false);
+  
+  // Set default thresholds to show at least one event (only if no items are visible)
+  useEffect(() => {
+    if (thresholdsInitializedRef.current) return;
+    
+    // AFK: Check if any items are visible, if not, adjust threshold
+    if (results.afkDetections.length > 0) {
+      const visibleCount = results.afkDetections.filter(afk => afk.afkDuration >= afkThreshold).length;
+      if (visibleCount === 0) {
+        const sorted = [...results.afkDetections].sort((a, b) => b.afkDuration - a.afkDuration);
+        const maxDuration = sorted[0].afkDuration;
+        setAfkThreshold(Math.max(5, Math.floor(maxDuration) - 1)); // At least 5 seconds minimum
+      }
+    }
+    
+    // Team Damage: Check if any items are visible, if not, adjust threshold
+    if (results.teamDamage.length > 0) {
+      const visibleCount = results.teamDamage.filter(td => td.damage >= teamDamageThreshold).length;
+      if (visibleCount === 0) {
+        const sorted = [...results.teamDamage].sort((a, b) => b.damage - a.damage);
+        const maxDamage = sorted[0].damage;
+        setTeamDamageThreshold(Math.max(1, Math.floor(maxDamage) - 1)); // At least 1 damage minimum
+      }
+    }
+    
+    // Team Flashes: Check if any items are visible, if not, adjust threshold
+    if (results.teamFlashes && results.teamFlashes.length > 0) {
+      const visibleCount = results.teamFlashes.filter(tf => tf.flashDuration >= flashDurationThreshold).length;
+      if (visibleCount === 0) {
+        const sorted = [...results.teamFlashes].sort((a, b) => b.flashDuration - a.flashDuration);
+        const maxDuration = sorted[0].flashDuration;
+        setFlashDurationThreshold(Math.max(1, Math.floor((maxDuration - 0.1) * 10) / 10)); // At least 1 second minimum
+      }
+    }
+    
+    thresholdsInitializedRef.current = true;
+  }, [results, afkThreshold, teamDamageThreshold, flashDurationThreshold]);
+  
+  // Reset initialization when results change significantly
+  useEffect(() => {
+    thresholdsInitializedRef.current = false;
+  }, [results.afkDetections.length, results.teamDamage.length, results.teamFlashes?.length]);
+  
   const [expandedSections, setExpandedSections] = useState({
     afk: true,
     teamKills: true,
     teamDamage: true,
     disconnects: true,
-    teamFlashes: true
+    teamFlashes: true,
+    midRoundInactivity: true,
+    bodyBlocking: true,
+    objectiveSabotage: true
   });
   const [sortBy, setSortBy] = useState<{
     afk: 'alphabetical' | 'round';
@@ -28,12 +76,18 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
     teamDamage: 'alphabetical' | 'round' | 'damage';
     disconnects: 'alphabetical' | 'round';
     teamFlashes: 'alphabetical' | 'round' | 'duration';
+    midRoundInactivity: 'alphabetical' | 'round' | 'confidence';
+    bodyBlocking: 'alphabetical' | 'round' | 'confidence';
+    objectiveSabotage: 'alphabetical' | 'round' | 'confidence';
   }>({
     afk: 'alphabetical',
     teamKills: 'alphabetical',
     teamDamage: 'damage',
     disconnects: 'alphabetical',
-    teamFlashes: 'duration'
+    teamFlashes: 'duration',
+    midRoundInactivity: 'confidence',
+    bodyBlocking: 'confidence',
+    objectiveSabotage: 'confidence'
   });
 
   const toggleSection = (section: keyof typeof expandedSections) => {
@@ -191,7 +245,7 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
   return (
     <div style={{ backgroundColor: 'var(--color-bg-primary)' }} className="flex flex-col gap-6 p-6 h-full overflow-y-auto">
       {/* Summary Cards */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3">
         <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
           <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
             <Clock size={16} />
@@ -231,6 +285,78 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
           </div>
           <div style={{ color: 'var(--color-accent-primary)' }} className="text-3xl font-bold mb-1">{results.teamFlashes?.length || 0}</div>
           <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Friendly flashbang detonations</div>
+        </div>
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4 relative">
+          <span 
+            style={{ 
+              position: 'absolute',
+              top: '0.5rem',
+              right: '0.5rem',
+              backgroundColor: 'var(--color-accent-primary)', 
+              color: 'var(--color-bg-primary)',
+              fontSize: '0.5rem',
+              padding: '0.125rem 0.25rem',
+              borderRadius: '0.125rem',
+              fontWeight: 'bold',
+              textTransform: 'uppercase',
+              cursor: 'help'
+            }}
+            title="This feature is untested and may provide incorrect information"
+          >BETA</span>
+          <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
+            <Activity size={16} style={{ color: 'var(--color-status-afk)' }} />
+            <span className="text-sm font-medium">Mid-Round Inactivity</span>
+          </div>
+          <div style={{ color: 'var(--color-status-afk)' }} className="text-3xl font-bold mb-1">{results.midRoundInactivity?.length || 0}</div>
+          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Mid-round AFK detections</div>
+        </div>
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4 relative">
+          <span 
+            style={{ 
+              position: 'absolute',
+              top: '0.5rem',
+              right: '0.5rem',
+              backgroundColor: 'var(--color-accent-primary)', 
+              color: 'var(--color-bg-primary)',
+              fontSize: '0.5rem',
+              padding: '0.125rem 0.25rem',
+              borderRadius: '0.125rem',
+              fontWeight: 'bold',
+              textTransform: 'uppercase',
+              cursor: 'help'
+            }}
+            title="This feature is untested and may provide incorrect information"
+          >BETA</span>
+          <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
+            <Ban size={16} style={{ color: 'var(--color-status-afk-died)' }} />
+            <span className="text-sm font-medium">Body Blocking</span>
+          </div>
+          <div style={{ color: 'var(--color-status-afk-died)' }} className="text-3xl font-bold mb-1">{results.bodyBlocking?.reduce((sum, b) => sum + b.events.length, 0) || 0}</div>
+          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Movement griefing events</div>
+        </div>
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4 relative">
+          <span 
+            style={{ 
+              position: 'absolute',
+              top: '0.5rem',
+              right: '0.5rem',
+              backgroundColor: 'var(--color-accent-primary)', 
+              color: 'var(--color-bg-primary)',
+              fontSize: '0.5rem',
+              padding: '0.125rem 0.25rem',
+              borderRadius: '0.125rem',
+              fontWeight: 'bold',
+              textTransform: 'uppercase',
+              cursor: 'help'
+            }}
+            title="This feature is untested and may provide incorrect information"
+          >BETA</span>
+          <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
+            <Bomb size={16} style={{ color: 'var(--color-status-afk-died)' }} />
+            <span className="text-sm font-medium">Objective Sabotage</span>
+          </div>
+          <div style={{ color: 'var(--color-status-afk-died)' }} className="text-3xl font-bold mb-1">{results.objectiveSabotage?.reduce((sum, o) => sum + o.allEvents.length, 0) || 0}</div>
+          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Bomb griefing events</div>
         </div>
       </div>
 
@@ -362,7 +488,7 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                                 icon={
                                   <span style={{ color: 'var(--color-status-afk-died)' }} className="flex items-center gap-1 text-xs font-semibold">
                                     <Skull size={12} />
-                                    Died while AFK
+                                    Ended when player died
                                   </span>
                                 }
                                 tooltip="Player died while being AFK, ending the AFK period"
@@ -373,7 +499,7 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                                 icon={
                                   <span style={{ color: 'var(--color-status-afk)' }} className="flex items-center gap-1 text-xs">
                                     <Move size={12} />
-                                    Moved
+                                    Ended when player started moving
                                   </span>
                                 }
                                 tooltip="Player started moving, ending the AFK period"
@@ -384,7 +510,7 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                                 icon={
                                   <span style={{ color: 'var(--color-text-muted)' }} className="flex items-center gap-1 text-xs">
                                     <Flag size={12} />
-                                    Round ended
+                                    Ended when round ended
                                   </span>
                                 }
                                 tooltip="Player remained AFK until the round ended"
@@ -586,7 +712,25 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
               )}
             </button>
             {expandedSections.teamDamage && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                <label style={{ color: 'var(--color-text-secondary)' }} className="text-xs whitespace-nowrap">
+                  Min Damage: <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{teamDamageThreshold}</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={teamDamageThreshold}
+                  onChange={(e) => setTeamDamageThreshold(Number(e.target.value))}
+                  style={{ 
+                    width: '8rem',
+                    height: '0.5rem',
+                    backgroundColor: 'var(--color-bg-tertiary)',
+                    accentColor: 'var(--color-accent-primary)'
+                  }}
+                  className="rounded-lg appearance-none cursor-pointer"
+                />
                 <ArrowUpDown size={14} style={{ color: 'var(--color-text-muted)' }} />
                 <select
                   value={sortBy.teamDamage}
@@ -610,7 +754,7 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
             )}
           </div>
           {expandedSections.teamDamage && (() => {
-            let filteredTeamDamage = results.teamDamage;
+            let filteredTeamDamage = results.teamDamage.filter(td => td.damage >= teamDamageThreshold);
             if (selectedPlayers.length > 0) {
               filteredTeamDamage = filteredTeamDamage.filter(td => 
                 selectedPlayers.includes(td.attackerName) || selectedPlayers.includes(td.victimName)
@@ -1047,8 +1191,417 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
         </div>
       )}
 
+      {/* Mid-Round Inactivity */}
+      {results.midRoundInactivity && results.midRoundInactivity.length > 0 && (
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => toggleSection('midRoundInactivity')}
+              style={{ color: 'var(--color-text-primary)' }}
+              className="flex items-center gap-2 text-lg font-semibold transition-colors hover:opacity-80"
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-status-afk)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-primary)'}
+            >
+              <Activity size={18} style={{ color: 'var(--color-status-afk)' }} />
+              Mid-Round Inactivity
+              <span 
+                style={{ 
+                  backgroundColor: 'var(--color-accent-primary)', 
+                  color: 'var(--color-bg-primary)',
+                  fontSize: '0.625rem',
+                  padding: '0.125rem 0.375rem',
+                  borderRadius: '0.25rem',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  cursor: 'help'
+                }}
+                title="This feature is untested and may provide incorrect information"
+              >BETA</span>
+              {expandedSections.midRoundInactivity ? (
+                <ChevronDown size={18} style={{ color: 'var(--color-text-muted)' }} />
+              ) : (
+                <ChevronUp size={18} style={{ color: 'var(--color-text-muted)' }} />
+              )}
+            </button>
+            {expandedSections.midRoundInactivity && (
+              <div className="flex items-center gap-3">
+                <ArrowUpDown size={14} style={{ color: 'var(--color-text-muted)' }} />
+                <select
+                  value={sortBy.midRoundInactivity}
+                  onChange={(e) => setSortBy(prev => ({ ...prev, midRoundInactivity: e.target.value as 'alphabetical' | 'round' | 'confidence' }))}
+                  style={{
+                    backgroundColor: 'var(--color-bg-tertiary)',
+                    color: 'var(--color-text-primary)',
+                    borderColor: 'var(--color-border-subtle)'
+                  }}
+                  className="border rounded px-2 py-1 text-xs"
+                >
+                  <option value="confidence">Confidence</option>
+                  <option value="alphabetical">Alphabetical</option>
+                  <option value="round">Round</option>
+                </select>
+              </div>
+            )}
+          </div>
+          {expandedSections.midRoundInactivity && (() => {
+            let filteredInactivity = results.midRoundInactivity || [];
+            
+            // Filter by selected players
+            if (selectedPlayers.length > 0) {
+              filteredInactivity = filteredInactivity.filter(mr => selectedPlayers.includes(mr.playerName));
+            }
+            
+            // Sort
+            if (sortBy.midRoundInactivity === 'alphabetical') {
+              filteredInactivity.sort((a, b) => a.playerName.localeCompare(b.playerName));
+            } else if (sortBy.midRoundInactivity === 'round') {
+              filteredInactivity.sort((a, b) => a.round - b.round);
+            } else {
+              // Sort by confidence (highest first)
+              filteredInactivity.sort((a, b) => b.confidence - a.confidence);
+            }
+            
+            return (
+              <div className="flex flex-wrap gap-4" style={{ maxHeight: '64rem', overflowY: 'auto' }}>
+                {filteredInactivity.map((inactivity, idx) => {
+                  const totalDuration = inactivity.segments.reduce((sum, seg) => sum + seg.duration, 0);
+                  const avgConfidence = inactivity.segments.reduce((sum, seg) => sum + seg.confidence, 0) / inactivity.segments.length;
+                  
+                  return (
+                    <div key={idx} style={{ backgroundColor: 'var(--color-bg-tertiary)', borderColor: 'var(--color-border-subtle)', width: 'calc(50% - 0.5rem)', minWidth: '25rem' }} className="border rounded p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{inactivity.playerName}</span>
+                          <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">Round {inactivity.round}</span>
+                          {getTeamBadge(inactivity.team)}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span style={{ color: 'var(--color-status-afk)' }} className="text-xs font-medium">
+                            {Math.round(avgConfidence * 100)}% confidence
+                          </span>
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        <div className="flex items-center gap-2">
+                          <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span>Total inactive: {totalDuration.toFixed(1)}s</span>
+                          <span style={{ color: 'var(--color-text-muted)' }}>({inactivity.segments.length} segment{inactivity.segments.length !== 1 ? 's' : ''})</span>
+                        </div>
+                        {inactivity.segments.map((segment, segIdx) => (
+                          <div key={segIdx} className="pl-4 border-l-2" style={{ borderColor: 'var(--color-border-subtle)' }}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <Clock size={10} style={{ color: 'var(--color-text-muted)' }} />
+                              <span>{formatTime(segment.startTime)} - {formatTime(segment.endTime)}</span>
+                              <span style={{ color: 'var(--color-text-muted)' }}>({segment.duration.toFixed(1)}s)</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                              <span>Reason: {segment.reason.replace(/_/g, ' ')}</span>
+                              <span>•</span>
+                              <span>Score: {segment.score.toFixed(2)}</span>
+                              <span>•</span>
+                              <span>Confidence: {Math.round(segment.confidence * 100)}%</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Body Blocking */}
+      {results.bodyBlocking && results.bodyBlocking.length > 0 && results.bodyBlocking.some(b => b.events.length > 0) && (
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => toggleSection('bodyBlocking')}
+              style={{ color: 'var(--color-text-primary)' }}
+              className="flex items-center gap-2 text-lg font-semibold transition-colors hover:opacity-80"
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-status-afk-died)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-primary)'}
+            >
+              <Ban size={18} style={{ color: 'var(--color-status-afk-died)' }} />
+              Body Blocking
+              <span 
+                style={{ 
+                  backgroundColor: 'var(--color-accent-primary)', 
+                  color: 'var(--color-bg-primary)',
+                  fontSize: '0.625rem',
+                  padding: '0.125rem 0.375rem',
+                  borderRadius: '0.25rem',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  cursor: 'help'
+                }}
+                title="This feature is untested and may provide incorrect information"
+              >BETA</span>
+              {expandedSections.bodyBlocking ? (
+                <ChevronDown size={18} style={{ color: 'var(--color-text-muted)' }} />
+              ) : (
+                <ChevronUp size={18} style={{ color: 'var(--color-text-muted)' }} />
+              )}
+            </button>
+            {expandedSections.bodyBlocking && (
+              <div className="flex items-center gap-3">
+                <ArrowUpDown size={14} style={{ color: 'var(--color-text-muted)' }} />
+                <select
+                  value={sortBy.bodyBlocking}
+                  onChange={(e) => setSortBy(prev => ({ ...prev, bodyBlocking: e.target.value as 'alphabetical' | 'round' | 'confidence' }))}
+                  style={{
+                    backgroundColor: 'var(--color-bg-tertiary)',
+                    color: 'var(--color-text-primary)',
+                    borderColor: 'var(--color-border-subtle)'
+                  }}
+                  className="border rounded px-2 py-1 text-xs"
+                >
+                  <option value="confidence">Confidence</option>
+                  <option value="alphabetical">Alphabetical</option>
+                  <option value="round">Round</option>
+                </select>
+              </div>
+            )}
+          </div>
+          {expandedSections.bodyBlocking && (() => {
+            // Flatten all events from all rounds
+            const allEvents = results.bodyBlocking.flatMap(b => 
+              b.events.map(e => ({ ...e, round: b.round }))
+            );
+            
+            let filteredEvents = allEvents;
+            
+            // Filter by selected players
+            if (selectedPlayers.length > 0) {
+              filteredEvents = filteredEvents.filter(e => 
+                selectedPlayers.includes(e.blockerName) || selectedPlayers.includes(e.victimName)
+              );
+            }
+            
+            // Sort
+            if (sortBy.bodyBlocking === 'alphabetical') {
+              filteredEvents.sort((a, b) => a.blockerName.localeCompare(b.blockerName));
+            } else if (sortBy.bodyBlocking === 'round') {
+              filteredEvents.sort((a, b) => a.round - b.round);
+            } else {
+              // Sort by confidence (highest first)
+              filteredEvents.sort((a, b) => b.confidence - a.confidence);
+            }
+            
+            return (
+              <div className="flex flex-wrap gap-4" style={{ maxHeight: '64rem', overflowY: 'auto' }}>
+                {filteredEvents.map((event, idx) => {
+                  const commandId = `block-${event.blockerId}-${event.victimId}-${event.startTick}`;
+                  const commands = generateConsoleCommands(event.startTick, event.blockerName);
+                  
+                  return (
+                    <div key={idx} style={{ backgroundColor: 'var(--color-bg-tertiary)', borderColor: 'var(--color-border-subtle)', width: 'calc(50% - 0.5rem)', minWidth: '25rem' }} className="border rounded p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span style={{ color: 'var(--color-status-afk-died)' }} className="font-medium">{event.blockerName}</span>
+                          <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">→</span>
+                          <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{event.victimName}</span>
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(commands, commandId)}
+                          style={{ 
+                            backgroundColor: copiedCommand === commandId ? 'var(--color-accent-primary)' : 'var(--color-bg-elevated)',
+                            color: copiedCommand === commandId ? 'var(--color-bg-primary)' : 'var(--color-text-secondary)'
+                          }}
+                          className="px-2 py-1 rounded text-xs flex items-center gap-1.5 transition-colors hover:opacity-80"
+                          title="Copy console commands to spectate at this time"
+                        >
+                          {copiedCommand === commandId ? (
+                            <Check size={12} />
+                          ) : (
+                            <Copy size={12} />
+                          )}
+                          <span className="font-medium">Copy</span>
+                        </button>
+                      </div>
+                      <div className="space-y-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        <div className="flex items-center gap-2">
+                          <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span style={{ color: 'var(--color-text-muted)' }}>Round {event.round}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span>Duration: {event.duration.toFixed(1)}s</span>
+                          <span style={{ color: 'var(--color-status-afk-died)' }} className="font-medium">
+                            ({Math.round(event.confidence * 100)}% confidence)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span>{formatTime(event.startTime)} - {formatTime(event.endTime)}</span>
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                          {event.reason}
+                        </div>
+                        <div className="pl-2 border-l-2 text-xs" style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-muted)' }}>
+                          <div>Avg distance: {event.featuresSummary.avgDistance.toFixed(1)} units</div>
+                          <div>Blocker stationary: {Math.round(event.featuresSummary.blockerStationaryFraction * 100)}%</div>
+                          {event.featuresSummary.failedPassAttempts > 0 && (
+                            <div>Failed pass attempts: {event.featuresSummary.failedPassAttempts}</div>
+                          )}
+                          {event.featuresSummary.reblockCount > 0 && (
+                            <div>Re-blocks: {event.featuresSummary.reblockCount}</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Objective Sabotage */}
+      {results.objectiveSabotage && results.objectiveSabotage.length > 0 && results.objectiveSabotage.some(o => o.allEvents.length > 0) && (
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => toggleSection('objectiveSabotage')}
+              style={{ color: 'var(--color-text-primary)' }}
+              className="flex items-center gap-2 text-lg font-semibold transition-colors hover:opacity-80"
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-status-afk-died)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-primary)'}
+            >
+              <Bomb size={18} style={{ color: 'var(--color-status-afk-died)' }} />
+              Objective Sabotage
+              <span 
+                style={{ 
+                  backgroundColor: 'var(--color-accent-primary)', 
+                  color: 'var(--color-bg-primary)',
+                  fontSize: '0.625rem',
+                  padding: '0.125rem 0.375rem',
+                  borderRadius: '0.25rem',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  cursor: 'help'
+                }}
+                title="This feature is untested and may provide incorrect information"
+              >BETA</span>
+              {expandedSections.objectiveSabotage ? (
+                <ChevronDown size={18} style={{ color: 'var(--color-text-muted)' }} />
+              ) : (
+                <ChevronUp size={18} style={{ color: 'var(--color-text-muted)' }} />
+              )}
+            </button>
+            {expandedSections.objectiveSabotage && (
+              <div className="flex items-center gap-3">
+                <ArrowUpDown size={14} style={{ color: 'var(--color-text-muted)' }} />
+                <select
+                  value={sortBy.objectiveSabotage}
+                  onChange={(e) => setSortBy(prev => ({ ...prev, objectiveSabotage: e.target.value as 'alphabetical' | 'round' | 'confidence' }))}
+                  style={{
+                    backgroundColor: 'var(--color-bg-tertiary)',
+                    color: 'var(--color-text-primary)',
+                    borderColor: 'var(--color-border-subtle)'
+                  }}
+                  className="border rounded px-2 py-1 text-xs"
+                >
+                  <option value="confidence">Confidence</option>
+                  <option value="alphabetical">Alphabetical</option>
+                  <option value="round">Round</option>
+                </select>
+              </div>
+            )}
+          </div>
+          {expandedSections.objectiveSabotage && (() => {
+            // Flatten all events from all rounds
+            const allEvents = results.objectiveSabotage.flatMap(o => o.allEvents);
+            
+            let filteredEvents = allEvents;
+            
+            // Filter by selected players
+            if (selectedPlayers.length > 0) {
+              filteredEvents = filteredEvents.filter(e => selectedPlayers.includes(e.actorName));
+            }
+            
+            // Sort
+            if (sortBy.objectiveSabotage === 'alphabetical') {
+              filteredEvents.sort((a, b) => a.actorName.localeCompare(b.actorName));
+            } else if (sortBy.objectiveSabotage === 'round') {
+              filteredEvents.sort((a, b) => a.round - b.round);
+            } else {
+              // Sort by confidence (highest first)
+              filteredEvents.sort((a, b) => b.confidence - a.confidence);
+            }
+            
+            return (
+              <div className="flex flex-wrap gap-4" style={{ maxHeight: '64rem', overflowY: 'auto' }}>
+                {filteredEvents.map((event, idx) => {
+                  const commandId = `objective-${event.actorId}-${event.startTick}`;
+                  const commands = generateConsoleCommands(event.startTick, event.actorName);
+                  
+                  return (
+                    <div key={idx} style={{ backgroundColor: 'var(--color-bg-tertiary)', borderColor: 'var(--color-border-subtle)', width: 'calc(50% - 0.5rem)', minWidth: '25rem' }} className="border rounded p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span style={{ color: 'var(--color-status-afk-died)' }} className="font-medium">{event.actorName}</span>
+                          <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">•</span>
+                          <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">{event.type.replace(/([A-Z])/g, ' $1').trim()}</span>
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(commands, commandId)}
+                          style={{ 
+                            backgroundColor: copiedCommand === commandId ? 'var(--color-accent-primary)' : 'var(--color-bg-elevated)',
+                            color: copiedCommand === commandId ? 'var(--color-bg-primary)' : 'var(--color-text-secondary)'
+                          }}
+                          className="px-2 py-1 rounded text-xs flex items-center gap-1.5 transition-colors hover:opacity-80"
+                          title="Copy console commands to spectate at this time"
+                        >
+                          {copiedCommand === commandId ? (
+                            <Check size={12} />
+                          ) : (
+                            <Copy size={12} />
+                          )}
+                          <span className="font-medium">Copy</span>
+                        </button>
+                      </div>
+                      <div className="space-y-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        <div className="flex items-center gap-2">
+                          <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span style={{ color: 'var(--color-text-muted)' }}>Round {event.round}</span>
+                        </div>
+                        {event.duration > 0 && (
+                          <div className="flex items-center gap-2">
+                            <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
+                            <span>Duration: {event.duration.toFixed(1)}s</span>
+                            <span style={{ color: 'var(--color-status-afk-died)' }} className="font-medium">
+                              ({Math.round(event.confidence * 100)}% confidence)
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span>{formatTime(event.startTime)} - {formatTime(event.endTime)}</span>
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                          {event.humanReason}
+                        </div>
+                        <div className="pl-2 border-l-2 text-xs" style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-muted)' }}>
+                          <div>Time left: {event.featuresSummary.timeLeft.toFixed(1)}s</div>
+                          <div>Teammates: {event.featuresSummary.aliveTeammates} | Enemies: {event.featuresSummary.aliveEnemies}</div>
+                          <div>Pressure: {Math.round(event.featuresSummary.pressureScore * 100)}% | Hopeless: {Math.round(event.featuresSummary.hopelessScore * 100)}%</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Empty State */}
-      {results.afkDetections.length === 0 && results.teamKills.length === 0 && results.teamDamage.length === 0 && (!results.disconnects || results.disconnects.length === 0) && (!results.teamFlashes || results.teamFlashes.length === 0) && (
+      {results.afkDetections.length === 0 && results.teamKills.length === 0 && results.teamDamage.length === 0 && (!results.disconnects || results.disconnects.length === 0) && (!results.teamFlashes || results.teamFlashes.length === 0) && (!results.midRoundInactivity || results.midRoundInactivity.length === 0) && (!results.bodyBlocking || results.bodyBlocking.length === 0 || !results.bodyBlocking.some(b => b.events.length > 0)) && (!results.objectiveSabotage || results.objectiveSabotage.length === 0 || !results.objectiveSabotage.some(o => o.allEvents.length > 0)) && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <Users style={{ color: 'var(--color-text-muted)' }} className="mb-4" size={48} />
           <p style={{ color: 'var(--color-text-secondary)' }} className="text-lg font-medium">No issues detected</p>

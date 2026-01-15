@@ -13,6 +13,8 @@ const App: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   
   // Zustand store
   const {
@@ -37,10 +39,10 @@ const App: React.FC = () => {
     });
   }, [setIsParserLoaded]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = async (file: File) => {
     if (!file) return;
 
+    setFileName(file.name);
     setIsParsing(true);
     setError(null);
     setParsingProgress({ percentage: 0, currentStep: 'Starting...', estimatedTimeRemaining: 0 });
@@ -94,12 +96,49 @@ const App: React.FC = () => {
     }
   };
 
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await handleFileUpload(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      if (file.name.endsWith('.dem')) {
+        await handleFileUpload(file);
+      } else {
+        setError('Please drop a .dem file');
+      }
+    }
+  };
+
   const handleReset = () => {
     // Clear local state first
     setAnalysisResults(null);
     setSelectedPlayers([]);
     setIsAnalyzing(false);
     setIsFilterOpen(false);
+    setFileName(null);
+    setIsDragging(false);
     
     // Clear parser explicitly before resetting store (parser may hold ArrayBuffer references)
     setDemoParser(null);
@@ -135,8 +174,15 @@ const App: React.FC = () => {
   if (!demoFile) {
     return (
       <div 
-        style={{ backgroundColor: 'var(--color-bg-primary)', color: 'var(--color-text-primary)' }}
-        className="h-screen w-full flex flex-col items-center justify-center gap-6 relative"
+        style={{ 
+          backgroundColor: isDragging ? '#0a0e1a' : 'var(--color-bg-primary)', 
+          color: 'var(--color-text-primary)',
+          border: isDragging ? '3px dashed var(--color-accent-primary)' : 'none'
+        }}
+        className="h-screen w-full flex flex-col items-center justify-center gap-6 relative transition-all"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         <div className="text-center space-y-2">
           <h1 
@@ -153,18 +199,22 @@ const App: React.FC = () => {
         ) : (
           <label 
             style={{
-              border: '2px dashed var(--color-border-subtle)',
-              backgroundColor: 'var(--color-bg-secondary)',
-              borderColor: 'var(--color-border-subtle)'
+              border: `2px dashed ${isDragging ? 'var(--color-accent-primary)' : 'var(--color-border-subtle)'}`,
+              backgroundColor: isDragging ? 'var(--color-bg-tertiary)' : 'var(--color-bg-secondary)',
+              borderColor: isDragging ? 'var(--color-accent-primary)' : 'var(--color-border-subtle)'
             }}
             className="flex flex-col items-center gap-4 p-10 rounded-xl transition-all cursor-pointer group hover:opacity-90"
             onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-accent-primary)';
-              e.currentTarget.style.backgroundColor = 'var(--color-bg-tertiary)';
+              if (!isDragging) {
+                e.currentTarget.style.borderColor = 'var(--color-accent-primary)';
+                e.currentTarget.style.backgroundColor = 'var(--color-bg-tertiary)';
+              }
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-border-subtle)';
-              e.currentTarget.style.backgroundColor = 'var(--color-bg-secondary)';
+              if (!isDragging) {
+                e.currentTarget.style.borderColor = 'var(--color-border-subtle)';
+                e.currentTarget.style.backgroundColor = 'var(--color-bg-secondary)';
+              }
             }}
           >
             <div 
@@ -174,7 +224,7 @@ const App: React.FC = () => {
               <Upload size={32} style={{ color: 'var(--color-accent-primary)' }} />
             </div>
             <div className="text-center">
-              <span style={{ color: 'var(--color-text-primary)' }} className="font-semibold">Select .dem file</span>
+              <span style={{ color: 'var(--color-text-primary)' }} className="font-semibold">{isDragging ? 'Drop .dem file here' : 'Select or drag & drop .dem file'}</span>
               <p style={{ color: 'var(--color-text-muted)' }} className="text-sm">Supports CS2 (Source 2) Demos</p>
             </div>
             <input 
@@ -182,7 +232,7 @@ const App: React.FC = () => {
                 type="file" 
                 accept=".dem" 
                 className="hidden" 
-                onChange={handleFileUpload} 
+                onChange={handleFileInputChange} 
             />
           </label>
         )}
@@ -203,7 +253,7 @@ const App: React.FC = () => {
         
         <div 
           style={{ color: 'var(--color-text-muted)' }}
-          className="absolute bottom-10 flex flex-col items-center gap-2 text-xs max-w-md text-center"
+          className="absolute bottom-10 flex flex-col items-center gap-2 text-xs max-w-2xl text-center px-4"
         >
            {!isUsingRealParser && (
              <div 
@@ -218,7 +268,20 @@ const App: React.FC = () => {
                 <span>demoparser2 not found. Falling back to simulation mode. Place 'demoparser2.js' and 'demoparser2_bg.wasm' in public/pkg/ to enable real parsing.</span>
              </div>
            )}
-           <span>Supports .dem files (Valve Matchmaking, Faceit, Premier)</span>
+           <div 
+             style={{
+               color: 'var(--color-text-secondary)',
+               backgroundColor: 'rgba(148, 163, 184, 0.1)',
+               borderColor: 'rgba(148, 163, 184, 0.3)'
+             }}
+             className="flex items-start gap-2 px-4 py-3 rounded border"
+           >
+             <Info size={14} style={{ marginTop: '0.125rem', flexShrink: 0 }} />
+             <div className="flex flex-col gap-1 text-left">
+               <span className="font-medium">Important:</span>
+               <span>This tool may miss certain events due to edge cases or demo parsing limitations. Always verify results by watching the demo to ensure accuracy.</span>
+             </div>
+           </div>
         </div>
       </div>
     );
@@ -246,25 +309,42 @@ const App: React.FC = () => {
         }} 
         className="flex items-center justify-between px-6 shrink-0 z-30"
       >
-        <button
-          onClick={handleReset}
-          className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-        >
-          <div 
-            style={{ 
-              width: '0.5rem',
-              height: '2rem',
-              backgroundColor: 'var(--color-accent-primary)',
-              borderRadius: '0.125rem'
-            }}
-          />
-          <h1 
-            style={{ color: 'var(--color-text-primary)' }}
-            className="font-bold text-lg tracking-wide"
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
           >
-            CS2 <span style={{ color: 'var(--color-text-muted)' }} className="font-light">DEMO ANALYZER</span>
-          </h1>
-        </button>
+            <div 
+              style={{ 
+                width: '0.5rem',
+                height: '2rem',
+                backgroundColor: 'var(--color-accent-primary)',
+                borderRadius: '0.125rem'
+              }}
+            />
+            <h1 
+              style={{ color: 'var(--color-text-primary)' }}
+              className="font-bold text-lg tracking-wide"
+            >
+              CS2 <span style={{ color: 'var(--color-text-muted)' }} className="font-light">DEMO ANALYZER</span>
+            </h1>
+          </button>
+          
+          {fileName && (
+            <div 
+              style={{ 
+                color: 'var(--color-text-muted)',
+                fontSize: '0.875rem',
+                paddingLeft: '1rem',
+                borderLeft: '1px solid var(--color-border-subtle)'
+              }}
+              className="font-mono truncate max-w-md"
+              title={fileName}
+            >
+              {fileName}
+            </div>
+          )}
+        </div>
         
         <div className="flex items-center gap-4">
             {analysisResults && (() => {
