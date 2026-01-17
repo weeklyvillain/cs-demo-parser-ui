@@ -5,6 +5,7 @@ import AnalysisResultsComponent from './components/AnalysisResults';
 import ProgressDisplay from './components/ProgressDisplay';
 import { loadDemoparser2, isParserAvailable } from './services/demoparser2Loader';
 import { useDemoStore } from './store/useDemoStore';
+import { Team } from './types';
 import { Upload, AlertCircle, Info, Loader2, Filter, X } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -347,19 +348,16 @@ const App: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-4">
-            {analysisResults && (() => {
-              // Get all unique player names from analysis results
+            {demoFile && (() => {
+              // Get all unique players from demo file (exclude spectators)
               const allPlayers = new Set<string>();
-              analysisResults.afkDetections.forEach(afk => allPlayers.add(afk.playerName));
-              analysisResults.teamKills.forEach(tk => {
-                allPlayers.add(tk.attackerName);
-                allPlayers.add(tk.victimName);
-              });
-              analysisResults.teamDamage.forEach(td => {
-                allPlayers.add(td.attackerName);
-                allPlayers.add(td.victimName);
-              });
-              analysisResults.disconnects.forEach(dc => allPlayers.add(dc.playerName));
+              for (const frame of demoFile.frames) {
+                for (const player of frame.players) {
+                  if (player.team !== Team.SPECTATOR) {
+                    allPlayers.add(player.name);
+                  }
+                }
+              }
               const playerList = Array.from(allPlayers).sort();
               
               return (
