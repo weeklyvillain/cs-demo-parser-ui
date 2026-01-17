@@ -928,6 +928,8 @@ export class DemoAnalyzer {
                     return 'Connection lost';
                   } else if (reasonLower.includes('server') && reasonLower.includes('full')) {
                     return 'Server full';
+                  } else if (reasonLower.includes('exiting')) {
+                    return 'Shutting down game';
                   } else {
                     // Keep original but capitalize first letter
                     return reasonStr.charAt(0).toUpperCase() + reasonStr.slice(1);
@@ -998,7 +1000,7 @@ export class DemoAnalyzer {
                 56: 'Host endgame',
                 57: 'Loop level load activate',
                 58: 'Create server failed',
-                59: 'Exiting',
+                59: 'Shutting down game',
                 60: 'Request hoststate idle',
                 61: 'Request hoststate HLTV relay',
                 62: 'Client consistency fail',
