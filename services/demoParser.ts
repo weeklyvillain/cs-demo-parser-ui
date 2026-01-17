@@ -7,6 +7,20 @@ import { useDemoStore } from '../store/useDemoStore';
 // Source 2 Demo Magic: PBDEMS2\0
 const DEMO_MAGIC = "PBDEMS2";
 
+// Helper function to get weapon price (simple version for parser)
+function getWeaponPrice(weaponName: string | undefined): number {
+  if (!weaponName) return 0;
+  const normalized = weaponName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const prices: Record<string, number> = {
+    'ak47': 2700, 'm4a1': 3100, 'm4a4': 3100, 'aug': 3300, 'sg556': 3000,
+    'galil': 1800, 'famas': 2050, 'awp': 4750, 'ssg08': 1700,
+    'mac10': 1050, 'mp9': 1250, 'mp7': 1500, 'ump45': 1200, 'p90': 2350,
+    'tec9': 500, 'deagle': 700, 'p250': 300, 'glock': 200, 'usp_silencer': 200,
+    'five_seven': 500, 'cz75': 500, 'r8_revolver': 600, 'p2000': 200,
+  };
+  return prices[normalized] || 0;
+}
+
 enum DemoCommand {
   DEM_FileHeader = 1,
   DEM_FileInfo = 2,
@@ -169,16 +183,17 @@ export class DemoParser {
     let roundFreezeEndEvents: any[] = [];
     const allEventTicks = new Set<number>(); // Collect all ticks that have events for efficient parsing
     
-    // Declare weaponFireEvents, damageEvents, playerBlindEvents, disconnectEvents, and connectEvents in outer scope so they're accessible later
+    // Declare weaponFireEvents, damageEvents, playerBlindEvents, disconnectEvents, connectEvents, and itemEquipEvents in outer scope so they're accessible later
     let weaponFireEvents: any[] = [];
     let damageEvents: any[] = [];
     let playerBlindEvents: any[] = [];
     let disconnectEvents: any[] = [];
     let connectEvents: any[] = [];
+    let itemEquipEvents: any[] = [];
     
     try {
       console.log('Extracting events...');
-      const allEvents = parser.parseEvents(buffer, ["player_death", "round_start", "round_begin", "round_end", "round_officially_ended", "cs_round_start", "round_freeze_end", "weapon_fire", "player_hurt", "damage", "player_blind", "player_disconnect", "player_connect"]);
+      const allEvents = parser.parseEvents(buffer, ["player_death", "round_start", "round_begin", "round_end", "round_officially_ended", "cs_round_start", "round_freeze_end", "weapon_fire", "player_hurt", "damage", "player_blind", "player_disconnect", "player_connect", "item_equip", "item_pickup"]);
       console.log(`✓ Extracted events, type: ${Array.isArray(allEvents) ? 'Array' : allEvents instanceof Map ? 'Map' : typeof allEvents}, length/size: ${Array.isArray(allEvents) ? allEvents.length : allEvents instanceof Map ? allEvents.size : 'N/A'}`);
       
       // Helper function to extract tick from event
@@ -257,12 +272,13 @@ export class DemoParser {
         }
       }
       
-      // Extract weapon fire events, damage events, player blind events, disconnect events, and connect events (assign to outer scope variable)
+      // Extract weapon fire events, damage events, player blind events, disconnect events, connect events, and item equip events (assign to outer scope variable)
       weaponFireEvents = [];
       damageEvents = [];
       playerBlindEvents = [];
       disconnectEvents = [];
       connectEvents = [];
+      itemEquipEvents = [];
       if (Array.isArray(allEvents)) {
         allEvents.forEach((event: any) => {
           let eventName = '';
@@ -282,6 +298,8 @@ export class DemoParser {
             disconnectEvents.push(event);
           } else if (eventName === 'player_connect') {
             connectEvents.push(event);
+          } else if (eventName === 'item_equip' || eventName === 'item_pickup') {
+            itemEquipEvents.push(event);
           }
         });
       } else if (allEvents instanceof Map) {
@@ -317,11 +335,17 @@ export class DemoParser {
             } else {
               connectEvents.push(value);
             }
+          } else if (eventName.includes('item_equip') || eventName.includes('item_pickup')) {
+            if (Array.isArray(value)) {
+              itemEquipEvents.push(...value);
+            } else {
+              itemEquipEvents.push(value);
+            }
           }
         }
       }
       
-      console.log(`✓ Extracted ${deathEvents.length} death events, ${roundStartEvents.length} round start events, ${roundEndEvents.length} round end events, ${weaponFireEvents.length} weapon fire events, ${damageEvents.length} damage events, ${playerBlindEvents.length} player blind events`);
+      console.log(`✓ Extracted ${deathEvents.length} death events, ${roundStartEvents.length} round start events, ${roundEndEvents.length} round end events, ${weaponFireEvents.length} weapon fire events, ${damageEvents.length} damage events, ${playerBlindEvents.length} player blind events, ${itemEquipEvents.length} item equip events`);
       
       // Log sample events to debug
       if (roundStartEvents.length > 0) {
@@ -407,6 +431,12 @@ export class DemoParser {
         "player_name",
         "shots_fired",
         "flash_duration",
+        "armor", // Armor value
+        "armor_value", // Alternative armor field
+        "has_defuser", // Defuser kit (CT)
+        "has_helmet", // Helmet status
+        "money", // Player money
+        "cash", // Alternative money field
       ];
       console.log('Extracting player data with fields:', wantedFields);
       
@@ -446,7 +476,15 @@ export class DemoParser {
         const firstRow = rawData[0];
         console.log('Sample player data (first row):', firstRow);
         if (firstRow instanceof Map) {
-          console.log('Sample data keys:', Array.from(firstRow.keys()));
+          const keys = Array.from(firstRow.keys());
+          console.log('Sample data keys:', keys);
+          // Log money and armor values if available
+          if (keys.includes('money') || keys.includes('cash')) {
+            console.log('Money field found! Sample value:', firstRow.get('money') || firstRow.get('cash'));
+          }
+          if (keys.includes('armor') || keys.includes('armor_value')) {
+            console.log('Armor field found! Sample value:', firstRow.get('armor') || firstRow.get('armor_value'));
+          }
           console.log('Sample tick value:', firstRow.get('tick'), 'type:', typeof firstRow.get('tick'));
           console.log('Sample tick_num value:', firstRow.get('tick_num'), 'type:', typeof firstRow.get('tick_num'));
         } else {
@@ -639,6 +677,19 @@ export class DemoParser {
         }
       }
       
+      // Log available fields for first few ticks to debug
+      if (index < 5) {
+        const keys = Array.from(playerData.keys());
+        console.log(`[DemoParser] Sample playerData keys (tick ${tickNum}):`, keys);
+        // Log money and armor if available
+        if (keys.includes('money') || keys.includes('cash')) {
+          console.log(`[DemoParser] Money found:`, playerData.get('money') || playerData.get('cash'));
+        }
+        if (keys.includes('armor') || keys.includes('armor_value')) {
+          console.log(`[DemoParser] Armor found:`, playerData.get('armor') || playerData.get('armor_value'));
+        }
+      }
+      
       // Extract values from playerData Map
       const teamVal = playerData.get('team_num');
         let team = Team.SPECTATOR;
@@ -687,6 +738,35 @@ export class DemoParser {
         }
       };
       
+      // Extract armor/helmet (using correct field names from tick data)
+      const armorValue = playerData.get('armor_value') || playerData.get('armor');
+      if (armorValue !== undefined && armorValue !== null) {
+        const armor = typeof armorValue === 'number' ? armorValue : parseInt(String(armorValue), 10);
+        if (!isNaN(armor) && armor >= 0) {
+          // Armor value is available, but we also check has_helmet separately
+        }
+      }
+      
+      // Extract helmet status
+      const hasHelmet = playerData.get('has_helmet');
+      if (hasHelmet !== undefined && hasHelmet !== null) {
+        player.hasHelmet = Boolean(hasHelmet);
+      }
+      
+      // Extract defuser (CT only)
+      const hasDefuser = playerData.get('has_defuser');
+      if (hasDefuser !== undefined && hasDefuser !== null && team === Team.CT) {
+        player.hasDefuser = Boolean(hasDefuser);
+      }
+      
+      // Extract money (try both 'money' and 'cash' fields)
+      const moneyValue = playerData.get('money') || playerData.get('cash');
+      if (moneyValue !== undefined && moneyValue !== null) {
+        const money = typeof moneyValue === 'number' ? moneyValue : parseInt(String(moneyValue), 10);
+        if (!isNaN(money) && money >= 0) {
+          player.money = money;
+        }
+      }
       
       // Store player for this tick (will overwrite if duplicate, keeping latest data)
       framesMap.get(tickNum)!.set(playerId, player);
@@ -849,6 +929,9 @@ export class DemoParser {
     const eventsByTick = new Map<number, GameEvent[]>();
     const deadPlayersByTick = new Map<number, Set<string>>();
     
+    // Track weapons from weapon_fire events (fallback if item_equip doesn't work)
+    const weaponFromFireByPlayer = new Map<number, Map<number, string>>(); // tick -> playerId -> weapon
+    
     // Process weapon fire events
     if (weaponFireEvents && weaponFireEvents.length > 0) {
       weaponFireEvents.forEach((fireEvent: any) => {
@@ -866,7 +949,16 @@ export class DemoParser {
           weapon = fireEvent.weapon || fireEvent.weapon_name || fireEvent.weapon_type || 'unknown';
         }
         
-        if (eventTick === 0) return;
+        if (eventTick === 0 || weapon === 'unknown' || playerName === 'Unknown') return;
+        
+        // Track weapon for this player
+        const playerId = playerIdMap.get(playerName);
+        if (playerId) {
+          if (!weaponFromFireByPlayer.has(eventTick)) {
+            weaponFromFireByPlayer.set(eventTick, new Map());
+          }
+          weaponFromFireByPlayer.get(eventTick)!.set(playerId, weapon);
+        }
         
         if (!eventsByTick.has(eventTick)) {
           eventsByTick.set(eventTick, []);
@@ -883,6 +975,58 @@ export class DemoParser {
         eventsByTick.get(eventTick)!.push(fireGameEvent);
       });
       console.log(`✓ Processed ${weaponFireEvents.length} weapon fire events`);
+    }
+    
+    // Process item_equip events to track weapons
+    // Note: playerIdMap is already declared earlier in the function for player ID mapping
+    const weaponByPlayerByTick = new Map<number, Map<number, string>>(); // tick -> playerId -> weapon
+    if (itemEquipEvents && itemEquipEvents.length > 0) {
+      console.log(`[ItemEquip] Processing ${itemEquipEvents.length} events, playerIdMap has ${playerIdMap.size} players`);
+      let matchedCount = 0;
+      itemEquipEvents.forEach((equipEvent: any) => {
+        let eventTick = 0;
+        let playerName = 'Unknown';
+        let item = 'unknown';
+        
+        if (equipEvent instanceof Map) {
+          eventTick = equipEvent.get('tick') || equipEvent.get('tick_num') || equipEvent.get('t') || 0;
+          playerName = equipEvent.get('user_name') || equipEvent.get('player_name') || equipEvent.get('name') || 'Unknown';
+          item = equipEvent.get('item') || equipEvent.get('weapon') || equipEvent.get('weapon_name') || 'unknown';
+        } else {
+          eventTick = equipEvent.tick || equipEvent.tick_num || equipEvent.t || 0;
+          playerName = equipEvent.user_name || equipEvent.player_name || equipEvent.name || 'Unknown';
+          item = equipEvent.item || equipEvent.weapon || equipEvent.weapon_name || 'unknown';
+        }
+        
+        if (eventTick === 0 || item === 'unknown' || playerName === 'Unknown') return;
+        
+        // Find player ID by name (using the existing playerIdMap)
+        const playerId = playerIdMap.get(playerName);
+        
+        if (playerId) {
+          if (!weaponByPlayerByTick.has(eventTick)) {
+            weaponByPlayerByTick.set(eventTick, new Map());
+          }
+          weaponByPlayerByTick.get(eventTick)!.set(playerId, item);
+          matchedCount++;
+        } else if (matchedCount < 5) {
+          // Log first few misses for debugging
+          console.log(`[ItemEquip] Could not find player ID for: "${playerName}", item: ${item}, tick: ${eventTick}`);
+        }
+      });
+      
+      // Log sample item_equip event for debugging
+      if (itemEquipEvents.length > 0) {
+        const sample = itemEquipEvents[0];
+        if (sample instanceof Map) {
+          console.log('[ItemEquip] Sample event keys:', Array.from(sample.keys()));
+          console.log('[ItemEquip] Sample event values:', Array.from(sample.entries()).slice(0, 5));
+        } else {
+          console.log('[ItemEquip] Sample event:', Object.keys(sample));
+        }
+      }
+      
+      console.log(`✓ Processed ${itemEquipEvents.length} item equip events, matched ${matchedCount}, mapped ${weaponByPlayerByTick.size} ticks with weapon data`);
     }
     
     deathEvents.forEach((deathEvent: any) => {
@@ -1055,7 +1199,55 @@ export class DemoParser {
         for (const [playerId, player] of tickPlayersMap.entries()) {
           // If this is a round start, ensure HP is 100 even if data says otherwise
           const updatedPlayer = isRoundStart ? { ...player, hp: 100, isAlive: true } : player;
+          
+          // Update weapon from item_equip events if available
+          const weaponMap = weaponByPlayerByTick.get(i);
+          if (weaponMap && weaponMap.has(playerId)) {
+            const weapon = weaponMap.get(playerId)!;
+            // Only set primary weapon if it's not a pistol/grenade (heuristic)
+            const weaponPrice = getWeaponPrice(weapon);
+            if (weaponPrice >= 1000) { // Rifles, SMGs, etc. are >= 1000
+              updatedPlayer.equipment.primary = weapon;
+            } else if (weaponPrice > 0 && weaponPrice < 1000 && !updatedPlayer.equipment.primary) {
+              // Pistol - set as primary if no primary exists yet
+              updatedPlayer.equipment.primary = weapon;
+            }
+          }
+          
           lastPlayersMap.set(playerId, updatedPlayer);
+        }
+      }
+      
+      // Also check for weapons from item_equip events for players not in this tick's data
+      // (to update weapons for players who already exist in lastPlayersMap)
+      const weaponMap = weaponByPlayerByTick.get(i);
+      if (weaponMap) {
+        for (const [playerId, weapon] of weaponMap.entries()) {
+          const existingPlayer = lastPlayersMap.get(playerId);
+          if (existingPlayer) {
+            const weaponPrice = getWeaponPrice(weapon);
+            if (weaponPrice >= 1000) {
+              existingPlayer.equipment.primary = weapon;
+            } else if (weaponPrice > 0 && weaponPrice < 1000 && !existingPlayer.equipment.primary) {
+              existingPlayer.equipment.primary = weapon;
+            }
+          }
+        }
+      }
+      
+      // Also check weapon_fire events for players not in this tick's data
+      const fireWeaponMap = weaponFromFireByPlayer.get(i);
+      if (fireWeaponMap) {
+        for (const [playerId, weapon] of fireWeaponMap.entries()) {
+          const existingPlayer = lastPlayersMap.get(playerId);
+          if (existingPlayer && !existingPlayer.equipment.primary) {
+            const weaponPrice = getWeaponPrice(weapon);
+            if (weaponPrice >= 1000) {
+              existingPlayer.equipment.primary = weapon;
+            } else if (weaponPrice > 0 && weaponPrice < 1000) {
+              existingPlayer.equipment.primary = weapon;
+            }
+          }
         }
       }
       
@@ -1165,6 +1357,34 @@ export class DemoParser {
     
     this.reportProgress(100, 'Complete!');
 
+    // Collect all raw events for economy griefing detection
+      // Raw events collection disabled (economy griefing feature disabled)
+      const allRawEvents: any[] = [];
+      // try {
+      //   const allEvents = parser.parseEvents(buffer, [
+      //     "player_death", "other_death", "round_start", "round_begin", "round_end", 
+      //     "round_officially_ended", "cs_round_start", "round_freeze_end", "buytime_ended",
+      //     "weapon_fire", "player_hurt", "damage", "player_blind", 
+      //     "player_disconnect", "player_connect", "item_equip", "item_pickup",
+      //     "player_spawn", "bomb_pickup", "bomb_dropped", "player_team"
+      //   ]);
+      //   
+      //   if (Array.isArray(allEvents)) {
+      //     allRawEvents.push(...allEvents);
+      //   } else if (allEvents instanceof Map) {
+      //     for (const value of allEvents.values()) {
+      //       if (Array.isArray(value)) {
+      //         allRawEvents.push(...value);
+      //       } else {
+      //         allRawEvents.push(value);
+      //       }
+      //     }
+      //   }
+      //   console.log(`✓ Collected ${allRawEvents.length} raw events for economy griefing detection`);
+      // } catch (err) {
+      //   console.warn('Failed to collect raw events for economy griefing:', err);
+      // }
+
     return {
         mapName,
         tickRate,
@@ -1178,7 +1398,8 @@ export class DemoParser {
       grenades: grenadeData || [],
       playerBlindEvents: playerBlindEvents || [],
       disconnectEvents: disconnectEvents || [],
-      connectEvents: connectEvents || []
+      connectEvents: connectEvents || [],
+      rawEvents: allRawEvents
     };
   }
 

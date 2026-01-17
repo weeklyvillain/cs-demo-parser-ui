@@ -326,7 +326,7 @@ const MapVisualization: React.FC = () => {
           />
         ))}
       </div>
-
+      
       {/* Floor Labels for multi-floor maps */}
       {hasMultipleFloors && (
         <div className="absolute top-2 left-1/2 transform -translate-x-1/2 z-10 flex gap-4">
@@ -395,9 +395,9 @@ const MapVisualization: React.FC = () => {
                   fill={teamColor}
                   opacity="0.3"
                   className="animate-pulse"
-                />
+              />
               )}
-
+              
               {/* Player Circle */}
               <circle
                 cx={x}
@@ -415,17 +415,17 @@ const MapVisualization: React.FC = () => {
                     : (isSelected ? 'drop-shadow(0 0 4px rgba(255,255,255,0.8))' : undefined)
                 }}
               />
-              
+
               {/* Disconnected Indicator */}
               {isDisconnected && !isDead && (
                 <g transform={`translate(${x}, ${y})`}>
-                  <circle
+                    <circle
                     cx="0"
                     cy="0"
                     r="1.5"
                     fill="#64748b"
                     opacity="0.9"
-                  />
+                    />
                   <text
                     x="0"
                     y="0.4"
@@ -439,7 +439,7 @@ const MapVisualization: React.FC = () => {
                   </text>
                 </g>
               )}
-              
+
               {/* Bomb Icon Indicator */}
               {player.hasBomb && !isDead && (
                 <g transform={`translate(${x}, ${y - 2.5})`}>
@@ -450,7 +450,7 @@ const MapVisualization: React.FC = () => {
                     fill="#ef4444"
                     opacity="0.9"
                   />
-                  <text
+                <text
                     x="0"
                     y="0.4"
                     textAnchor="middle"
@@ -478,7 +478,7 @@ const MapVisualization: React.FC = () => {
                     textShadow: '0 0 3px rgba(0,0,0,0.8), 0 0 3px rgba(0,0,0,0.8)'
                   }}
                 >
-                  {player.name}
+                    {player.name}
                 </text>
               )}
 
@@ -596,11 +596,11 @@ const MapVisualization: React.FC = () => {
           );
         })}
       </svg>
-
+      
       {/* Upload Custom Map Image Button */}
       <div className="absolute top-2 right-2 z-10">
         <label className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-slate-900/80 hover:bg-slate-800 text-slate-300 rounded border border-slate-700 cursor-pointer transition-colors backdrop-blur-sm">
-          <ImageIcon size={14} />
+            <ImageIcon size={14} />
           <span>Custom Map</span>
           <input
             type="file"

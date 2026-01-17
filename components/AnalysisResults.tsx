@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { AnalysisResults as AnalysisResultsType, AFKDetection, TeamKill, TeamDamage, DisconnectReconnect, TeamFlash, MidRoundInactivity, BodyBlocking, ObjectiveSabotage } from '../services/demoAnalyzer';
+import { AnalysisResults as AnalysisResultsType, AFKDetection, TeamKill, TeamDamage, DisconnectReconnect, TeamFlash, MidRoundInactivity, BodyBlocking, ObjectiveSabotage, EconomyGriefing } from '../services/demoAnalyzer';
 import { Team, DemoFile } from '../types';
-import { Skull, Zap, Clock, Users, WifiOff, Copy, Check, ChevronDown, ChevronUp, Info, Shield, ArrowUpDown, Target, Heart, Timer, Award, AlertCircle, Activity, Move, Flag, Ban, Bomb } from 'lucide-react';
+import { Skull, Zap, Clock, Users, WifiOff, Copy, Check, ChevronDown, ChevronUp, Info, Shield, ArrowUpDown, Target, Heart, Timer, Award, AlertCircle, Activity, Move, Flag, Ban, Bomb, DollarSign, X } from 'lucide-react';
 import { useDemoStore } from '../store/useDemoStore';
 import { FlashbangIcon, MolotovIcon, HEIcon, HeadshotIcon, DamageIcon } from './CustomIcons';
 
@@ -17,6 +17,7 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
   const [flashDurationThreshold, setFlashDurationThreshold] = useState<number>(4); // Default 4 seconds
   const [teamDamageThreshold, setTeamDamageThreshold] = useState<number>(25); // Default 25 damage
   const thresholdsInitializedRef = useRef(false);
+  const [economyTimelineModal, setEconomyTimelineModal] = useState<{ playerId: number; playerName: string } | null>(null);
   
   // Set default thresholds to show at least one event (only if no items are visible)
   useEffect(() => {
@@ -68,10 +69,12 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
     teamFlashes: true,
     midRoundInactivity: true,
     bodyBlocking: true,
-    objectiveSabotage: true
+    objectiveSabotage: true,
+    economyGriefing: true,
+    cleanPlayers: false
   });
   const [sortBy, setSortBy] = useState<{
-    afk: 'alphabetical' | 'round';
+    afk: 'alphabetical' | 'round' | 'duration';
     teamKills: 'alphabetical' | 'round';
     teamDamage: 'alphabetical' | 'round' | 'damage';
     disconnects: 'alphabetical' | 'round';
@@ -79,6 +82,7 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
     midRoundInactivity: 'alphabetical' | 'round' | 'confidence';
     bodyBlocking: 'alphabetical' | 'round' | 'confidence';
     objectiveSabotage: 'alphabetical' | 'round' | 'confidence';
+    economyGriefing: 'alphabetical' | 'round' | 'confidence' | 'score';
   }>({
     afk: 'alphabetical',
     teamKills: 'alphabetical',
@@ -87,7 +91,8 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
     teamFlashes: 'duration',
     midRoundInactivity: 'confidence',
     bodyBlocking: 'confidence',
-    objectiveSabotage: 'confidence'
+    objectiveSabotage: 'confidence',
+    economyGriefing: 'confidence'
   });
 
   const toggleSection = (section: keyof typeof expandedSections) => {
@@ -245,7 +250,7 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
   return (
     <div style={{ backgroundColor: 'var(--color-bg-primary)' }} className="flex flex-col gap-6 p-6 h-full overflow-y-auto">
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
           <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
             <Clock size={16} />
@@ -286,78 +291,32 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
           <div style={{ color: 'var(--color-accent-primary)' }} className="text-3xl font-bold mb-1">{results.teamFlashes?.length || 0}</div>
           <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Friendly flashbang detonations</div>
         </div>
-        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4 relative">
-          <span 
-            style={{ 
-              position: 'absolute',
-              top: '0.5rem',
-              right: '0.5rem',
-              backgroundColor: 'var(--color-accent-primary)', 
-              color: 'var(--color-bg-primary)',
-              fontSize: '0.5rem',
-              padding: '0.125rem 0.25rem',
-              borderRadius: '0.125rem',
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-              cursor: 'help'
-            }}
-            title="This feature is untested and may provide incorrect information"
-          >BETA</span>
-          <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
-            <Activity size={16} style={{ color: 'var(--color-status-afk)' }} />
-            <span className="text-sm font-medium">Mid-Round Inactivity</span>
+        {false && (
+          <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4 relative">
+            <span 
+              style={{ 
+                position: 'absolute',
+                top: '0.5rem',
+                right: '0.5rem',
+                backgroundColor: 'var(--color-accent-primary)', 
+                color: 'var(--color-bg-primary)',
+                fontSize: '0.5rem',
+                padding: '0.125rem 0.25rem',
+                borderRadius: '0.125rem',
+                fontWeight: 'bold',
+                textTransform: 'uppercase',
+                cursor: 'help'
+              }}
+              title="This feature is untested and may provide incorrect information"
+            >BETA</span>
+            <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
+              <DollarSign size={16} style={{ color: 'var(--color-status-afk-died)' }} />
+              <span className="text-sm font-medium">Economy Griefing</span>
+            </div>
+            <div style={{ color: 'var(--color-status-afk-died)' }} className="text-3xl font-bold mb-1">{results.economyGriefing?.byPlayer ? Array.from(results.economyGriefing.byPlayer.values()).reduce((sum, p) => sum + p.events.length, 0) : 0}</div>
+            <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Buy sabotage events</div>
           </div>
-          <div style={{ color: 'var(--color-status-afk)' }} className="text-3xl font-bold mb-1">{results.midRoundInactivity?.length || 0}</div>
-          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Mid-round AFK detections</div>
-        </div>
-        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4 relative">
-          <span 
-            style={{ 
-              position: 'absolute',
-              top: '0.5rem',
-              right: '0.5rem',
-              backgroundColor: 'var(--color-accent-primary)', 
-              color: 'var(--color-bg-primary)',
-              fontSize: '0.5rem',
-              padding: '0.125rem 0.25rem',
-              borderRadius: '0.125rem',
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-              cursor: 'help'
-            }}
-            title="This feature is untested and may provide incorrect information"
-          >BETA</span>
-          <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
-            <Ban size={16} style={{ color: 'var(--color-status-afk-died)' }} />
-            <span className="text-sm font-medium">Body Blocking</span>
-          </div>
-          <div style={{ color: 'var(--color-status-afk-died)' }} className="text-3xl font-bold mb-1">{results.bodyBlocking?.reduce((sum, b) => sum + b.events.length, 0) || 0}</div>
-          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Movement griefing events</div>
-        </div>
-        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4 relative">
-          <span 
-            style={{ 
-              position: 'absolute',
-              top: '0.5rem',
-              right: '0.5rem',
-              backgroundColor: 'var(--color-accent-primary)', 
-              color: 'var(--color-bg-primary)',
-              fontSize: '0.5rem',
-              padding: '0.125rem 0.25rem',
-              borderRadius: '0.125rem',
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-              cursor: 'help'
-            }}
-            title="This feature is untested and may provide incorrect information"
-          >BETA</span>
-          <div style={{ color: 'var(--color-text-secondary)' }} className="flex items-center gap-2 mb-2">
-            <Bomb size={16} style={{ color: 'var(--color-status-afk-died)' }} />
-            <span className="text-sm font-medium">Objective Sabotage</span>
-          </div>
-          <div style={{ color: 'var(--color-status-afk-died)' }} className="text-3xl font-bold mb-1">{results.objectiveSabotage?.reduce((sum, o) => sum + o.allEvents.length, 0) || 0}</div>
-          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Bomb griefing events</div>
-        </div>
+        )}
       </div>
 
       {/* AFK Detections */}
@@ -382,22 +341,52 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
             {expandedSections.afk && (
             <div className="flex items-center gap-3">
               <label style={{ color: 'var(--color-text-secondary)' }} className="text-xs whitespace-nowrap">
-                Threshold: <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{afkThreshold}s</span>
+                Threshold:
               </label>
               <input
-                type="range"
+                type="number"
                 min="5"
                 max="30"
+                step="1"
                 value={afkThreshold}
-                onChange={(e) => setAfkThreshold(Number(e.target.value))}
-                style={{ 
-                  width: '8rem',
-                  height: '0.5rem',
-                  backgroundColor: 'var(--color-bg-tertiary)',
-                  accentColor: 'var(--color-accent-primary)'
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (!isNaN(val) && val >= 5 && val <= 30) {
+                    setAfkThreshold(val);
+                  }
                 }}
-                className="rounded-lg appearance-none cursor-pointer"
+                style={{ 
+                  width: '4rem',
+                  backgroundColor: 'var(--color-bg-tertiary)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border-subtle)',
+                  borderRadius: '0.375rem',
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.75rem'
+                }}
+                className="text-center"
               />
+              <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">s</span>
+              <div className="flex items-center gap-2">
+                <ArrowUpDown size={14} style={{ color: 'var(--color-text-muted)' }} />
+                <select
+                  value={sortBy.afk}
+                  onChange={(e) => setSortBy(prev => ({ ...prev, afk: e.target.value as 'alphabetical' | 'round' | 'duration' }))}
+                  style={{
+                    backgroundColor: 'var(--color-bg-tertiary)',
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-border-subtle)',
+                    borderRadius: '0.375rem',
+                    padding: '0.25rem 0.5rem',
+                    fontSize: '0.75rem'
+                  }}
+                  className="cursor-pointer"
+                >
+                  <option value="alphabetical">Name</option>
+                  <option value="round">Round</option>
+                  <option value="duration">Time AFK (highest)</option>
+                </select>
+              </div>
             </div>
             )}
           </div>
@@ -442,12 +431,19 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
               const sortedPlayers = Array.from(playerAFKs.values());
               if (sortBy.afk === 'alphabetical') {
                 sortedPlayers.sort((a, b) => a.playerName.localeCompare(b.playerName));
-              } else {
+              } else if (sortBy.afk === 'round') {
                 // Sort by lowest round first
                 sortedPlayers.sort((a, b) => {
                   const aMinRound = Math.min(...a.rounds.map(r => r.round));
                   const bMinRound = Math.min(...b.rounds.map(r => r.round));
                   return aMinRound - bMinRound;
+                });
+              } else if (sortBy.afk === 'duration') {
+                // Sort by highest AFK duration first
+                sortedPlayers.sort((a, b) => {
+                  const aMaxDuration = Math.max(...a.rounds.map(r => r.afkDuration));
+                  const bMaxDuration = Math.max(...b.rounds.map(r => r.afkDuration));
+                  return bMaxDuration - aMaxDuration; // Highest first
                 });
               }
               
@@ -560,6 +556,162 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
                 </div>
               ));
             })()}
+            </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Disconnects/Reconnects */}
+      {results.disconnects && results.disconnects.length > 0 && (
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
+          <button
+            onClick={() => toggleSection('disconnects')}
+            style={{ color: 'var(--color-text-primary)' }}
+            className="flex items-center gap-2 text-lg font-semibold mb-3 transition-colors hover:opacity-80"
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-status-neutral)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-primary)'}
+          >
+            <WifiOff size={18} />
+            Disconnects & Reconnects
+            {expandedSections.disconnects ? (
+              <ChevronDown size={18} style={{ color: 'var(--color-text-muted)' }} />
+            ) : (
+              <ChevronUp size={18} style={{ color: 'var(--color-text-muted)' }} />
+            )}
+          </button>
+          {expandedSections.disconnects && (() => {
+            let filteredDisconnects = results.disconnects;
+            if (selectedPlayers.length > 0) {
+              filteredDisconnects = filteredDisconnects.filter(dc => selectedPlayers.includes(dc.playerName));
+            }
+            // Sort based on selected option
+            if (sortBy.disconnects === 'alphabetical') {
+              filteredDisconnects = [...filteredDisconnects].sort((a, b) => a.playerName.localeCompare(b.playerName));
+            } else {
+              filteredDisconnects = [...filteredDisconnects].sort((a, b) => a.disconnectRound - b.disconnectRound);
+            }
+            return (
+            <div className="flex flex-wrap gap-4" style={{ maxHeight: '64rem', overflowY: 'auto', scrollbarGutter: 'stable' }}>
+            {filteredDisconnects.map((dc, idx) => {
+              const commandId = `dc-${idx}`;
+              // Jump to 5 seconds before disconnect to see context before player leaves
+              const commands = generateConsoleCommands(dc.disconnectTick, dc.playerName, 5);
+              return (
+              <div 
+                key={idx} 
+                style={{ 
+                  backgroundColor: 'var(--color-bg-tertiary)',
+                  borderColor: 'var(--color-border-subtle)',
+                  width: 'calc(50% - 0.5rem)',
+                  minWidth: '25rem'
+                }} 
+                className="border rounded p-3"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span style={getTeamColor(dc.team)} className="font-medium">{dc.playerName}</span>
+                    {getTeamBadge(dc.team)}
+                  </div>
+                  <button
+                    onClick={() => copyToClipboard(commands, commandId)}
+                    style={{ backgroundColor: 'transparent' }}
+                    className="p-1.5 rounded transition-colors flex-shrink-0 hover:opacity-70"
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    title="Copy console commands"
+                  >
+                    {copiedCommand === commandId ? (
+                      <Check size={14} style={{ color: 'var(--color-accent-primary)' }} />
+                    ) : (
+                      <Copy size={14} style={{ color: 'var(--color-text-muted)' }} />
+                    )}
+                  </button>
+                </div>
+                
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs flex-wrap">
+                    <WifiOff size={12} style={{ color: 'var(--color-status-neutral)' }} />
+                    <span style={{ color: 'var(--color-text-secondary)' }}>Disconnected:</span>
+                    <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
+                    <span style={{ color: 'var(--color-status-neutral)' }} className="font-medium">Round {dc.disconnectRound}</span>
+                    <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
+                    <span style={{ color: 'var(--color-text-muted)' }}>at {formatTime(dc.disconnectTime)}</span>
+                    {dc.diedBeforeDisconnect && (
+                      <TooltipIcon
+                        icon={<Skull size={16} />}
+                        tooltip="Player died in this round before disconnecting, so this round is not counted as missed"
+                        color="var(--color-text-muted)"
+                      />
+                    )}
+                  </div>
+                  {dc.reason && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <Info size={12} style={{ color: 'var(--color-text-muted)' }} />
+                      <span style={{ color: 'var(--color-text-secondary)' }}>Reason:</span>
+                      <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{dc.reason}</span>
+                    </div>
+                  )}
+                  
+                  {dc.reconnectTime ? (
+                    <>
+                      <div className="flex items-center gap-2 text-xs flex-wrap">
+                        <Users size={12} style={{ color: 'var(--color-accent-primary)' }} />
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Reconnected:</span>
+                        <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
+                        <span style={{ color: 'var(--color-accent-primary)' }} className="font-medium">Round {dc.reconnectRound || '?'}</span>
+                        <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
+                        <span style={{ color: 'var(--color-text-muted)' }}>at {formatTime(dc.reconnectTime)}</span>
+                        {dc.reconnectedBeforeFreezeEnd && (
+                          <TooltipIcon
+                            icon={<Shield size={16} />}
+                            tooltip="Player reconnected before freeze time ended, so they are playing this round"
+                            color="var(--color-accent-primary)"
+                          />
+                        )}
+                      </div>
+                      {dc.duration && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span style={{ color: 'var(--color-text-secondary)' }}>Duration:</span>
+                          <span style={{ color: 'var(--color-text-primary)' }}>{dc.duration.toFixed(1)}s</span>
+                        </div>
+                      )}
+                      {dc.roundsMissed !== undefined && dc.roundsMissed > 0 && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <AlertCircle size={12} style={{ color: 'var(--color-status-afk-died)' }} />
+                          <span style={{ color: 'var(--color-text-secondary)' }}>Rounds missed:</span>
+                          <span style={{ color: 'var(--color-status-afk)' }} className="font-semibold">{dc.roundsMissed} round{dc.roundsMissed !== 1 ? 's' : ''}</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 text-xs">
+                        <AlertCircle size={12} style={{ color: 'var(--color-status-afk-died)' }} />
+                        <span style={{ color: 'var(--color-text-secondary)' }}>Status:</span>
+                        <span style={{ color: 'var(--color-status-afk-died)' }} className="font-semibold">Never reconnected</span>
+                      </div>
+                      {dc.duration && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
+                          <span style={{ color: 'var(--color-text-secondary)' }}>Offline for:</span>
+                          <span style={{ color: 'var(--color-text-primary)' }}>{dc.duration.toFixed(1)}s</span>
+                        </div>
+                      )}
+                      {dc.roundsMissed !== undefined && dc.roundsMissed > 0 && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <AlertCircle size={12} style={{ color: 'var(--color-status-afk-died)' }} />
+                          <span style={{ color: 'var(--color-text-secondary)' }}>Rounds missed:</span>
+                          <span style={{ color: 'var(--color-status-afk-died)' }} className="font-semibold">{dc.roundsMissed} round{dc.roundsMissed !== 1 ? 's' : ''}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+              );
+            })}
             </div>
             );
           })()}
@@ -714,22 +866,30 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
             {expandedSections.teamDamage && (
               <div className="flex items-center gap-3">
                 <label style={{ color: 'var(--color-text-secondary)' }} className="text-xs whitespace-nowrap">
-                  Min Damage: <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{teamDamageThreshold}</span>
+                  Min Damage:
                 </label>
                 <input
-                  type="range"
+                  type="number"
                   min="0"
                   max="100"
                   step="1"
                   value={teamDamageThreshold}
-                  onChange={(e) => setTeamDamageThreshold(Number(e.target.value))}
-                  style={{ 
-                    width: '8rem',
-                    height: '0.5rem',
-                    backgroundColor: 'var(--color-bg-tertiary)',
-                    accentColor: 'var(--color-accent-primary)'
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (!isNaN(val) && val >= 0 && val <= 100) {
+                      setTeamDamageThreshold(val);
+                    }
                   }}
-                  className="rounded-lg appearance-none cursor-pointer"
+                  style={{ 
+                    width: '4rem',
+                    backgroundColor: 'var(--color-bg-tertiary)',
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-border-subtle)',
+                    borderRadius: '0.375rem',
+                    padding: '0.25rem 0.5rem',
+                    fontSize: '0.75rem'
+                  }}
+                  className="text-center"
                 />
                 <ArrowUpDown size={14} style={{ color: 'var(--color-text-muted)' }} />
                 <select
@@ -878,155 +1038,6 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
         </div>
       )}
 
-      {/* Disconnects/Reconnects */}
-      {results.disconnects && results.disconnects.length > 0 && (
-        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
-          <button
-            onClick={() => toggleSection('disconnects')}
-            style={{ color: 'var(--color-text-primary)' }}
-            className="flex items-center gap-2 text-lg font-semibold mb-3 transition-colors hover:opacity-80"
-            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-status-neutral)'}
-            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-primary)'}
-          >
-            <WifiOff size={18} />
-            Disconnects & Reconnects
-            {expandedSections.disconnects ? (
-              <ChevronDown size={18} style={{ color: 'var(--color-text-muted)' }} />
-            ) : (
-              <ChevronUp size={18} style={{ color: 'var(--color-text-muted)' }} />
-            )}
-          </button>
-          {expandedSections.disconnects && (() => {
-            let filteredDisconnects = results.disconnects;
-            if (selectedPlayers.length > 0) {
-              filteredDisconnects = filteredDisconnects.filter(dc => selectedPlayers.includes(dc.playerName));
-            }
-            // Sort based on selected option
-            if (sortBy.disconnects === 'alphabetical') {
-              filteredDisconnects = [...filteredDisconnects].sort((a, b) => a.playerName.localeCompare(b.playerName));
-            } else {
-              filteredDisconnects = [...filteredDisconnects].sort((a, b) => a.disconnectRound - b.disconnectRound);
-            }
-            return (
-            <div className="flex flex-wrap gap-4" style={{ maxHeight: '64rem', overflowY: 'auto', scrollbarGutter: 'stable' }}>
-            {filteredDisconnects.map((dc, idx) => {
-              const commandId = `dc-${idx}`;
-              // Jump to 5 seconds before disconnect to see context before player leaves
-              const commands = generateConsoleCommands(dc.disconnectTick, dc.playerName, 5);
-              return (
-              <div 
-                key={idx} 
-                style={{ 
-                  backgroundColor: 'var(--color-bg-tertiary)',
-                  borderColor: 'var(--color-border-subtle)',
-                  width: 'calc(50% - 0.5rem)',
-                  minWidth: '25rem'
-                }} 
-                className="border rounded p-3"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span style={getTeamColor(dc.team)} className="font-medium">{dc.playerName}</span>
-                    {getTeamBadge(dc.team)}
-                  </div>
-                  <button
-                    onClick={() => copyToClipboard(commands, commandId)}
-                    style={{ backgroundColor: 'transparent' }}
-                    className="p-1.5 rounded transition-colors flex-shrink-0 hover:opacity-70"
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                    title="Copy console commands"
-                  >
-                    {copiedCommand === commandId ? (
-                      <Check size={14} style={{ color: 'var(--color-accent-primary)' }} />
-                    ) : (
-                      <Copy size={14} style={{ color: 'var(--color-text-muted)' }} />
-                    )}
-                  </button>
-                </div>
-                
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-xs">
-                    <WifiOff size={12} style={{ color: 'var(--color-status-neutral)' }} />
-                    <span style={{ color: 'var(--color-text-secondary)' }}>Disconnected:</span>
-                    <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
-                    <span style={{ color: 'var(--color-status-neutral)' }} className="font-medium">Round {dc.disconnectRound}</span>
-                    <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
-                    <span style={{ color: 'var(--color-text-muted)' }}>at {formatTime(dc.disconnectTime)}</span>
-                    {dc.diedBeforeDisconnect && (
-                      <TooltipIcon
-                        icon={<Skull size={14} />}
-                        tooltip="Player died in this round before disconnecting, so this round is not counted as missed"
-                        color="var(--color-text-muted)"
-                      />
-                    )}
-                  </div>
-                  
-                  {dc.reconnectTime ? (
-                    <>
-                      <div className="flex items-center gap-2 text-xs">
-                        <Users size={12} style={{ color: 'var(--color-accent-primary)' }} />
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Reconnected:</span>
-                        <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
-                        <span style={{ color: 'var(--color-accent-primary)' }} className="font-medium">Round {dc.reconnectRound || '?'}</span>
-                        <Clock size={12} style={{ color: 'var(--color-text-muted)' }} />
-                        <span style={{ color: 'var(--color-text-muted)' }}>at {formatTime(dc.reconnectTime)}</span>
-                        {dc.reconnectedBeforeFreezeEnd && (
-                          <TooltipIcon
-                            icon={<Shield size={14} />}
-                            tooltip="Player reconnected before freeze time ended, so they are playing this round"
-                            color="var(--color-accent-primary)"
-                          />
-                        )}
-                      </div>
-                      {dc.duration && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
-                          <span style={{ color: 'var(--color-text-secondary)' }}>Duration:</span>
-                          <span style={{ color: 'var(--color-text-primary)' }}>{dc.duration.toFixed(1)}s</span>
-                        </div>
-                      )}
-                      {dc.roundsMissed !== undefined && dc.roundsMissed > 0 && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <AlertCircle size={12} style={{ color: 'var(--color-status-afk-died)' }} />
-                          <span style={{ color: 'var(--color-text-secondary)' }}>Rounds missed:</span>
-                          <span style={{ color: 'var(--color-status-afk)' }} className="font-semibold">{dc.roundsMissed} round{dc.roundsMissed !== 1 ? 's' : ''}</span>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2 text-xs">
-                        <AlertCircle size={12} style={{ color: 'var(--color-status-afk-died)' }} />
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Status:</span>
-                        <span style={{ color: 'var(--color-status-afk-died)' }} className="font-semibold">Never reconnected</span>
-                      </div>
-                      {dc.duration && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <Timer size={12} style={{ color: 'var(--color-text-muted)' }} />
-                          <span style={{ color: 'var(--color-text-secondary)' }}>Offline for:</span>
-                          <span style={{ color: 'var(--color-text-primary)' }}>{dc.duration.toFixed(1)}s</span>
-                        </div>
-                      )}
-                      {dc.roundsMissed !== undefined && dc.roundsMissed > 0 && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <AlertCircle size={12} style={{ color: 'var(--color-status-afk-died)' }} />
-                          <span style={{ color: 'var(--color-text-secondary)' }}>Rounds missed:</span>
-                          <span style={{ color: 'var(--color-status-afk-died)' }} className="font-semibold">{dc.roundsMissed} round{dc.roundsMissed !== 1 ? 's' : ''}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-              );
-            })}
-            </div>
-            );
-          })()}
-        </div>
-      )}
-
       {/* Team Flashes */}
       {results.teamFlashes && results.teamFlashes.length > 0 && (
         <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
@@ -1049,23 +1060,32 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
             {expandedSections.teamFlashes && (
               <div className="flex items-center gap-3">
                 <label style={{ color: 'var(--color-text-secondary)' }} className="text-xs whitespace-nowrap">
-                  Min Duration: <span style={{ color: 'var(--color-text-primary)' }} className="font-medium">{flashDurationThreshold.toFixed(1)}s</span>
+                  Min Duration:
                 </label>
                 <input
-                  type="range"
+                  type="number"
                   min="1"
                   max="10"
                   step="0.1"
                   value={flashDurationThreshold}
-                  onChange={(e) => setFlashDurationThreshold(Number(e.target.value))}
-                  style={{ 
-                    width: '8rem',
-                    height: '0.5rem',
-                    backgroundColor: 'var(--color-bg-tertiary)',
-                    accentColor: 'var(--color-accent-primary)'
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (!isNaN(val) && val >= 1 && val <= 10) {
+                      setFlashDurationThreshold(val);
+                    }
                   }}
-                  className="rounded-lg appearance-none cursor-pointer"
+                  style={{ 
+                    width: '4rem',
+                    backgroundColor: 'var(--color-bg-tertiary)',
+                    color: 'var(--color-text-primary)',
+                    border: '1px solid var(--color-border-subtle)',
+                    borderRadius: '0.375rem',
+                    padding: '0.25rem 0.5rem',
+                    fontSize: '0.75rem'
+                  }}
+                  className="text-center"
                 />
+                <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">s</span>
                 <div className="flex items-center gap-2">
                   <ArrowUpDown size={14} style={{ color: 'var(--color-text-muted)' }} />
                   <select
@@ -1191,8 +1211,8 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
         </div>
       )}
 
-      {/* Mid-Round Inactivity */}
-      {results.midRoundInactivity && results.midRoundInactivity.length > 0 && (
+      {/* Mid-Round Inactivity - DISABLED */}
+      {false && results.midRoundInactivity && results.midRoundInactivity.length > 0 && (
         <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <button
@@ -1313,8 +1333,8 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
         </div>
       )}
 
-      {/* Body Blocking */}
-      {results.bodyBlocking && results.bodyBlocking.length > 0 && results.bodyBlocking.some(b => b.events.length > 0) && (
+      {/* Body Blocking - DISABLED */}
+      {false && results.bodyBlocking && results.bodyBlocking.length > 0 && results.bodyBlocking.some(b => b.events.length > 0) && (
         <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <button
@@ -1460,8 +1480,8 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
         </div>
       )}
 
-      {/* Objective Sabotage */}
-      {results.objectiveSabotage && results.objectiveSabotage.length > 0 && results.objectiveSabotage.some(o => o.allEvents.length > 0) && (
+      {/* Objective Sabotage - DISABLED */}
+      {false && results.objectiveSabotage && results.objectiveSabotage.length > 0 && results.objectiveSabotage.some(o => o.allEvents.length > 0) && (
         <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <button
@@ -1600,12 +1620,756 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ results, selectedPlay
         </div>
       )}
 
+      {/* Economy Griefing */}
+      {false && results.economyGriefing && results.economyGriefing.byPlayer && results.economyGriefing.byPlayer.size > 0 && (
+        <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => toggleSection('economyGriefing')}
+              style={{ color: 'var(--color-text-primary)' }}
+              className="flex items-center gap-2 text-lg font-semibold transition-colors hover:opacity-80"
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-status-afk-died)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-primary)'}
+            >
+              <DollarSign size={20} style={{ color: 'var(--color-status-afk-died)' }} />
+              <span>Economy Griefing / Buy Sabotage</span>
+              <span 
+                style={{ 
+                  backgroundColor: 'var(--color-accent-primary)', 
+                  color: 'var(--color-bg-primary)',
+                  fontSize: '0.5rem',
+                  padding: '0.125rem 0.25rem',
+                  borderRadius: '0.125rem',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
+                  cursor: 'help',
+                  marginLeft: '0.5rem'
+                }}
+                title="This feature is untested and may provide incorrect information"
+              >BETA</span>
+            </button>
+            <button
+              onClick={() => toggleSection('economyGriefing')}
+              style={{ color: 'var(--color-text-muted)' }}
+              className="transition-colors hover:opacity-80"
+            >
+              {expandedSections.economyGriefing ? (
+                <ChevronDown size={18} style={{ color: 'var(--color-text-muted)' }} />
+              ) : (
+                <ChevronUp size={18} style={{ color: 'var(--color-text-muted)' }} />
+              )}
+            </button>
+            {expandedSections.economyGriefing && (
+              <div className="flex items-center gap-3">
+                <ArrowUpDown size={14} style={{ color: 'var(--color-text-muted)' }} />
+                <select
+                  value={sortBy.economyGriefing}
+                  onChange={(e) => setSortBy(prev => ({ ...prev, economyGriefing: e.target.value as 'alphabetical' | 'round' | 'confidence' | 'score' }))}
+                  style={{
+                    backgroundColor: 'var(--color-bg-tertiary)',
+                    color: 'var(--color-text-primary)',
+                    borderColor: 'var(--color-border-subtle)'
+                  }}
+                  className="border rounded px-2 py-1 text-xs"
+                >
+                  <option value="alphabetical">Sort by Name</option>
+                  <option value="round">Sort by Round</option>
+                  <option value="confidence">Sort by Confidence</option>
+                  <option value="score">Sort by Score</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {expandedSections.economyGriefing && (() => {
+            // Get all players with economy events (with playerId and playerName)
+            const players = Array.from(results.economyGriefing.byPlayer.entries()).map(([playerId, playerResult]) => {
+              // Get player name from demoFile
+              let playerName = `Player ${playerId}`;
+              if (demoFile) {
+                for (const frame of demoFile.frames) {
+                  const player = frame.players.find(p => p.id === playerId);
+                  if (player) {
+                    playerName = player.name;
+                    break;
+                  }
+                }
+              }
+              return { playerId, playerName, ...playerResult };
+            });
+            
+            let filteredPlayers = players;
+            
+            // Filter by selected players
+            if (selectedPlayers.length > 0) {
+              filteredPlayers = filteredPlayers.filter(p => selectedPlayers.includes(p.playerName));
+            }
+            
+            // Sort players
+            if (sortBy.economyGriefing === 'alphabetical') {
+              filteredPlayers.sort((a, b) => a.playerName.localeCompare(b.playerName));
+            } else if (sortBy.economyGriefing === 'round') {
+              filteredPlayers.sort((a, b) => {
+                const aFirstRound = Math.min(...a.events.map(e => e.round));
+                const bFirstRound = Math.min(...b.events.map(e => e.round));
+                return aFirstRound - bFirstRound;
+              });
+            } else if (sortBy.economyGriefing === 'confidence') {
+              filteredPlayers.sort((a, b) => b.matchConfidence - a.matchConfidence);
+            } else {
+              // Sort by score
+              filteredPlayers.sort((a, b) => b.matchScore - a.matchScore);
+            }
+            
+            if (filteredPlayers.length === 0) {
+              return (
+                <div className="text-center py-8" style={{ color: 'var(--color-text-muted)' }}>
+                  No economy griefing events found for selected players.
+                </div>
+              );
+            }
+            
+            return (
+              <div className="space-y-4">
+                {filteredPlayers.map((playerResult) => {
+                  // Sort events for this player
+                  const sortedEvents = [...playerResult.events].sort((a, b) => {
+                    if (sortBy.economyGriefing === 'round') {
+                      return a.round - b.round;
+                    } else if (sortBy.economyGriefing === 'confidence') {
+                      return b.confidence - a.confidence;
+                    } else if (sortBy.economyGriefing === 'score') {
+                      return b.score - a.score;
+                    }
+                    return 0;
+                  });
+                  
+                  return (
+                    <div
+                      key={playerResult.playerId}
+                      style={{
+                        backgroundColor: 'var(--color-bg-tertiary)',
+                        borderColor: 'var(--color-border-subtle)'
+                      }}
+                      className="border rounded-lg p-4"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <button
+                          onClick={() => setEconomyTimelineModal({ playerId: playerResult.playerId, playerName: playerResult.playerName })}
+                          style={{
+                            backgroundColor: 'var(--color-bg-secondary)',
+                            color: 'var(--color-text-primary)',
+                            borderColor: 'var(--color-border-subtle)'
+                          }}
+                          className="border rounded px-3 py-1 text-xs font-medium transition-colors hover:opacity-80 flex items-center gap-1"
+                        >
+                          <Clock size={12} />
+                          View Timeline
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          {(() => {
+                            // Get team from first event or demoFile
+                            let playerTeam = Team.SPECTATOR;
+                            if (demoFile) {
+                              for (const frame of demoFile.frames) {
+                                const player = frame.players.find(p => p.id === playerResult.playerId);
+                                if (player) {
+                                  playerTeam = player.team;
+                                  break;
+                                }
+                              }
+                            }
+                            return (
+                              <div
+                                style={{
+                                  backgroundColor: getTeamColor(playerTeam),
+                                  color: 'white',
+                                  padding: '0.25rem 0.5rem',
+                                  borderRadius: '0.25rem',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 'bold'
+                                }}
+                              >
+                                {playerResult.playerName}
+                              </div>
+                            );
+                          })()}
+                          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            <span>{playerResult.events.length} event{playerResult.events.length !== 1 ? 's' : ''}</span>
+                            <span>•</span>
+                            <span>Score: {playerResult.matchScore.toFixed(2)}</span>
+                            <span>•</span>
+                            <span>Confidence: {Math.round(playerResult.matchConfidence * 100)}%</span>
+                            {playerResult.flaggedMatch && (
+                              <>
+                                <span>•</span>
+                                <span style={{ color: 'var(--color-status-afk-died)', fontWeight: 'bold' }}>FLAGGED</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(
+                            generateConsoleCommands(0, playerResult.playerName),
+                            `economy-${playerResult.playerId}`
+                          )}
+                          style={{
+                            backgroundColor: copiedCommand === `economy-${playerResult.playerId}` ? 'var(--color-accent-primary)' : 'var(--color-bg-secondary)',
+                            color: copiedCommand === `economy-${playerResult.playerId}` ? 'var(--color-bg-primary)' : 'var(--color-text-primary)'
+                          }}
+                          className="px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1"
+                        >
+                          {copiedCommand === `economy-${playerResult.playerId}` ? (
+                            <>
+                              <Check size={12} />
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={12} />
+                              Copy Commands
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        {sortedEvents.map((event, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              backgroundColor: 'var(--color-bg-primary)',
+                              borderColor: 'var(--color-border-subtle)'
+                            }}
+                            className="border rounded p-3"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <span
+                                style={{
+                                  backgroundColor: 'var(--color-status-afk-died)',
+                                  color: 'white',
+                                  padding: '0.125rem 0.375rem',
+                                  borderRadius: '0.25rem',
+                                  fontSize: '0.625rem',
+                                  fontWeight: 'bold',
+                                  textTransform: 'uppercase'
+                                }}
+                              >
+                                {event.type.replace(/([A-Z])/g, ' $1').trim()}
+                              </span>
+                              <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">
+                                Confidence: {Math.round(event.confidence * 100)}%
+                              </span>
+                              <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">
+                                Score: {event.score.toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <Award size={12} style={{ color: 'var(--color-text-muted)' }} />
+                              <span style={{ color: 'var(--color-text-muted)' }}>Round {event.round}</span>
+                            </div>
+                            <div className="text-xs mb-2" style={{ color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+                              {event.humanReason}
+                            </div>
+                            {event.featureSummary && (
+                              <div className="pl-2 border-l-2 text-xs" style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-muted)' }}>
+                                {event.featureSummary.postBuyValue !== undefined && (
+                                  <div>Post-buy value: ${event.featureSummary.postBuyValue.toLocaleString()}</div>
+                                )}
+                                {event.featureSummary.teamMedianValue !== undefined && (
+                                  <div>Team median: ${event.featureSummary.teamMedianValue.toLocaleString()}</div>
+                                )}
+                                {event.featureSummary.teamBuyState && (
+                                  <div>Team buy state: {event.featureSummary.teamBuyState}</div>
+                                )}
+                                {event.featureSummary.damageDealt !== undefined && (
+                                  <div>Damage: {event.featureSummary.damageDealt}</div>
+                                )}
+                                {event.featureSummary.timeToDeath !== undefined && (
+                                  <div>Time to death: {event.featureSummary.timeToDeath.toFixed(1)}s</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Clean Players (Not in any sections) */}
+      {(() => {
+        // Get all unique players from demo (use player ID as key to avoid duplicates)
+        const allPlayers = new Map<number, { id: number; name: string; team: Team }>();
+        if (demoFile) {
+          for (const frame of demoFile.frames) {
+            for (const player of frame.players) {
+              if (player.team !== Team.SPECTATOR && !allPlayers.has(player.id)) {
+                allPlayers.set(player.id, { id: player.id, name: player.name, team: player.team });
+              }
+            }
+          }
+        }
+        
+        // Get all players that appear in any analysis section (by ID for consistency)
+        const playersInSections = new Set<number>();
+        
+        // Helper to find player ID by name (with fallback)
+        const getPlayerIdByName = (name: string): number | null => {
+          // First try exact match
+          for (const [id, player] of allPlayers.entries()) {
+            if (player.name === name) return id;
+          }
+          // If not found, try case-insensitive match
+          for (const [id, player] of allPlayers.entries()) {
+            if (player.name.toLowerCase() === name.toLowerCase()) return id;
+          }
+          return null;
+        };
+        
+        // AFK (has playerId)
+        results.afkDetections.forEach(afk => {
+          if (afk.playerId) {
+            playersInSections.add(afk.playerId);
+          } else {
+            const playerId = getPlayerIdByName(afk.playerName);
+            if (playerId !== null) playersInSections.add(playerId);
+          }
+        });
+        
+        // Team Kills (has attackerId and victimId)
+        results.teamKills.forEach(tk => {
+          if (tk.attackerId) playersInSections.add(tk.attackerId);
+          if (tk.victimId) playersInSections.add(tk.victimId);
+        });
+        
+        // Team Damage (has attackerId and victimId)
+        results.teamDamage.forEach(td => {
+          if (td.attackerId) playersInSections.add(td.attackerId);
+          if (td.victimId) playersInSections.add(td.victimId);
+        });
+        
+        // Disconnects (has playerId)
+        results.disconnects?.forEach(d => {
+          if (d.playerId) {
+            playersInSections.add(d.playerId);
+          } else {
+            const playerId = getPlayerIdByName(d.playerName);
+            if (playerId !== null) playersInSections.add(playerId);
+          }
+        });
+        
+        // Team Flashes (has throwerId and victimId)
+        results.teamFlashes?.forEach(tf => {
+          if (tf.throwerId) playersInSections.add(tf.throwerId);
+          if (tf.victimId) playersInSections.add(tf.victimId);
+        });
+        
+        // Mid-Round Inactivity (has playerId) - DISABLED
+        // results.midRoundInactivity?.forEach(m => {
+        //   if (m.playerId) {
+        //     playersInSections.add(m.playerId);
+        //   } else {
+        //     const playerId = getPlayerIdByName(m.playerName);
+        //     if (playerId !== null) playersInSections.add(playerId);
+        //   }
+        // });
+        
+        // Body Blocking (check events for player IDs or names) - DISABLED
+        // results.bodyBlocking?.forEach(bb => {
+        //   bb.events.forEach(event => {
+        //     // Check if event has player IDs
+        //     if ('blockerId' in event && typeof event.blockerId === 'number') {
+        //       playersInSections.add(event.blockerId as number);
+        //     } else if (event.blockerName) {
+        //       const blockerId = getPlayerIdByName(event.blockerName);
+        //       if (blockerId !== null) playersInSections.add(blockerId);
+        //     }
+        //     if ('blockedId' in event && typeof event.blockedId === 'number') {
+        //       playersInSections.add(event.blockedId as number);
+        //     } else if (event.blockedName) {
+        //       const blockedId = getPlayerIdByName(event.blockedName);
+        //       if (blockedId !== null) playersInSections.add(blockedId);
+        //     }
+        //   });
+        // });
+        
+        // Objective Sabotage (has playerId in playerData) - DISABLED
+        // results.objectiveSabotage?.forEach(os => {
+        //   os.eventsByPlayer.forEach((playerData) => {
+        //     if (playerData.playerId) {
+        //       playersInSections.add(playerData.playerId);
+        //     } else {
+        //       const playerId = getPlayerIdByName(playerData.playerName);
+        //       if (playerId !== null) playersInSections.add(playerId);
+        //     }
+        //   });
+        // });
+        
+        // Economy Griefing (even though disabled, check if it exists)
+        if (results.economyGriefing?.byPlayer) {
+          results.economyGriefing.byPlayer.forEach((playerResult, playerId) => {
+            playersInSections.add(playerId);
+          });
+        }
+        
+        // Find clean players (not in any section)
+        const cleanPlayers = Array.from(allPlayers.values()).filter(p => !playersInSections.has(p.id));
+        
+        // Filter by selected players if applicable
+        let filteredCleanPlayers = cleanPlayers;
+        if (selectedPlayers.length > 0) {
+          filteredCleanPlayers = cleanPlayers.filter(p => selectedPlayers.includes(p.name));
+        }
+        
+        // Sort alphabetically
+        filteredCleanPlayers.sort((a, b) => a.name.localeCompare(b.name));
+        
+        if (cleanPlayers.length === 0) return null;
+        
+        return (
+          <div style={{ backgroundColor: 'var(--color-bg-secondary)', borderColor: 'var(--color-border-subtle)' }} className="border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <button
+                onClick={() => toggleSection('cleanPlayers')}
+                style={{ color: 'var(--color-text-primary)' }}
+                className="flex items-center gap-2 text-lg font-semibold transition-colors hover:opacity-80"
+                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-accent-primary)'}
+                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-primary)'}
+              >
+                <Users size={18} />
+                Clean Players
+                {expandedSections.cleanPlayers ? (
+                  <ChevronDown size={18} style={{ color: 'var(--color-text-muted)' }} />
+                ) : (
+                  <ChevronUp size={18} style={{ color: 'var(--color-text-muted)' }} />
+                )}
+              </button>
+            </div>
+            
+            {expandedSections.cleanPlayers && (
+              <div className="space-y-2">
+                {filteredCleanPlayers.length === 0 ? (
+                  <div className="text-center py-8" style={{ color: 'var(--color-text-muted)' }}>
+                    No clean players found for selected filters.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {filteredCleanPlayers.map((player) => (
+                      <div
+                        key={player.id}
+                        style={{
+                          backgroundColor: 'var(--color-bg-tertiary)',
+                          borderColor: 'var(--color-border-subtle)'
+                        }}
+                        className="border rounded-lg p-3 flex items-center justify-between"
+                      >
+                        <div
+                          style={{
+                            backgroundColor: player.team === Team.CT ? 'var(--color-team-ct)' : player.team === Team.T ? 'var(--color-team-t)' : 'var(--color-text-muted)',
+                            color: 'white',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: '0.25rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          {player.name}
+                        </div>
+                        <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                          <Check size={14} style={{ color: 'var(--color-accent-primary)' }} />
+                          <span>No issues</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-4 text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
+                  Showing {filteredCleanPlayers.length} of {cleanPlayers.length} clean player{cleanPlayers.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Economy Timeline Modal */}
+      {false && economyTimelineModal && (() => {
+        const playerResult = results.economyGriefing?.byPlayer?.get(economyTimelineModal.playerId);
+        if (!playerResult) return null;
+        
+        // Get team color
+        let playerTeam = Team.SPECTATOR;
+        if (demoFile) {
+          for (const frame of demoFile.frames) {
+            const player = frame.players.find(p => p.id === economyTimelineModal.playerId);
+            if (player) {
+              playerTeam = player.team;
+              break;
+            }
+          }
+        }
+        
+        // Sort round summaries by round number
+        const sortedSummaries = [...playerResult.roundSummaries].sort((a, b) => a.round - b.round);
+        
+        // Find max value for scaling
+        const maxValue = Math.max(...sortedSummaries.map(s => Math.max(s.preBuyValue, s.postBuyValue)), 1000);
+        
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              zIndex: 1000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '2rem'
+            }}
+            onClick={() => setEconomyTimelineModal(null)}
+          >
+            <div
+              style={{
+                backgroundColor: 'var(--color-bg-secondary)',
+                borderColor: 'var(--color-border-subtle)',
+                maxWidth: '90vw',
+                maxHeight: '90vh',
+                width: '1000px',
+                overflow: 'auto'
+              }}
+              className="border rounded-lg p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div
+                    style={{
+                      backgroundColor: getTeamColor(playerTeam),
+                      color: 'white',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '0.5rem',
+                      fontSize: '1rem',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    {economyTimelineModal.playerName}
+                  </div>
+                  <h2 style={{ color: 'var(--color-text-primary)' }} className="text-xl font-semibold">
+                    Economy Timeline
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setEconomyTimelineModal(null)}
+                  style={{
+                    color: 'var(--color-text-muted)',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                  className="hover:opacity-80"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {sortedSummaries.map((summary) => {
+                  const roundEvents = playerResult.events.filter(e => e.round === summary.round);
+                  const preBuyHeight = (summary.preBuyValue / maxValue) * 200;
+                  const postBuyHeight = (summary.postBuyValue / maxValue) * 200;
+                  
+                  return (
+                    <div
+                      key={summary.round}
+                      style={{
+                        backgroundColor: 'var(--color-bg-tertiary)',
+                        borderColor: 'var(--color-border-subtle)'
+                      }}
+                      className="border rounded-lg p-4"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            style={{
+                              backgroundColor: 'var(--color-accent-primary)',
+                              color: 'white',
+                              padding: '0.25rem 0.75rem',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.875rem',
+                              fontWeight: 'bold'
+                            }}
+                          >
+                            Round {summary.round}
+                          </div>
+                          <div
+                            style={{
+                              backgroundColor: summary.teamBuyState === 'FULL' ? 'var(--color-status-afk-died)' :
+                                             summary.teamBuyState === 'FORCE' ? 'var(--color-accent-primary)' :
+                                             'var(--color-text-muted)',
+                              color: 'white',
+                              padding: '0.25rem 0.75rem',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.75rem',
+                              fontWeight: 'bold',
+                              textTransform: 'uppercase'
+                            }}
+                          >
+                            {summary.teamBuyState}
+                          </div>
+                          {roundEvents.length > 0 && (
+                            <div
+                              style={{
+                                backgroundColor: 'var(--color-status-afk-died)',
+                                color: 'white',
+                                padding: '0.25rem 0.75rem',
+                                borderRadius: '0.25rem',
+                                fontSize: '0.75rem',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              {roundEvents.length} Event{roundEvents.length !== 1 ? 's' : ''}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ color: 'var(--color-text-muted)' }} className="text-sm">
+                          Team Median: ${summary.teamMedianValue.toLocaleString()}
+                        </div>
+                      </div>
+                      
+                      {/* Economy Value Visualization */}
+                      <div className="flex items-end gap-4 mb-3" style={{ height: '220px' }}>
+                        <div className="flex flex-col items-center gap-2">
+                          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Pre-Buy</div>
+                          <div className="flex flex-col items-center gap-1" style={{ height: '200px', justifyContent: 'flex-end' }}>
+                            <div
+                              style={{
+                                backgroundColor: 'var(--color-text-muted)',
+                                width: '40px',
+                                height: `${preBuyHeight}px`,
+                                borderRadius: '0.25rem 0.25rem 0 0',
+                                minHeight: preBuyHeight > 0 ? '2px' : '0'
+                              }}
+                            />
+                            <div style={{ color: 'var(--color-text-primary)' }} className="text-xs font-medium">
+                              ${summary.preBuyValue.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex-1 flex flex-col items-center gap-2">
+                          <div style={{ color: 'var(--color-text-muted)' }} className="text-xs">Post-Buy</div>
+                          <div className="flex flex-col items-center gap-1" style={{ height: '200px', justifyContent: 'flex-end' }}>
+                            <div
+                              style={{
+                                backgroundColor: summary.teamBuyState === 'FULL' ? 'var(--color-status-afk-died)' :
+                                               summary.teamBuyState === 'FORCE' ? 'var(--color-accent-primary)' :
+                                               'var(--color-text-muted)',
+                                width: '60px',
+                                height: `${postBuyHeight}px`,
+                                borderRadius: '0.25rem 0.25rem 0 0',
+                                minHeight: postBuyHeight > 0 ? '2px' : '0'
+                              }}
+                            />
+                            <div style={{ color: 'var(--color-text-primary)' }} className="text-xs font-medium">
+                              ${summary.postBuyValue.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Acquired Items */}
+                      {summary.acquiredDuringBuy.length > 0 && (
+                        <div className="mb-2">
+                          <div style={{ color: 'var(--color-text-secondary)' }} className="text-xs font-medium mb-1">
+                            Acquired during buy:
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {summary.acquiredDuringBuy.map((item, idx) => (
+                              <span
+                                key={idx}
+                                style={{
+                                  backgroundColor: 'var(--color-bg-primary)',
+                                  color: 'var(--color-text-primary)',
+                                  padding: '0.125rem 0.5rem',
+                                  borderRadius: '0.25rem',
+                                  fontSize: '0.75rem'
+                                }}
+                              >
+                                {item.replace('weapon_', '').replace('item_', '')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Events for this round */}
+                      {roundEvents.length > 0 && (
+                        <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
+                          <div style={{ color: 'var(--color-text-secondary)' }} className="text-xs font-medium mb-2">
+                            Events:
+                          </div>
+                          <div className="space-y-2">
+                            {roundEvents.map((event, idx) => (
+                              <div
+                                key={idx}
+                                style={{
+                                  backgroundColor: 'var(--color-bg-primary)',
+                                  borderColor: 'var(--color-border-subtle)'
+                                }}
+                                className="border rounded p-2"
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span
+                                    style={{
+                                      backgroundColor: 'var(--color-status-afk-died)',
+                                      color: 'white',
+                                      padding: '0.125rem 0.375rem',
+                                      borderRadius: '0.25rem',
+                                      fontSize: '0.625rem',
+                                      fontWeight: 'bold',
+                                      textTransform: 'uppercase'
+                                    }}
+                                  >
+                                    {event.type.replace(/([A-Z])/g, ' $1').trim()}
+                                  </span>
+                                  <span style={{ color: 'var(--color-text-muted)' }} className="text-xs">
+                                    Confidence: {Math.round(event.confidence * 100)}%
+                                  </span>
+                                </div>
+                                <div style={{ color: 'var(--color-text-secondary)', fontStyle: 'italic' }} className="text-xs">
+                                  {event.humanReason}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Empty State */}
-      {results.afkDetections.length === 0 && results.teamKills.length === 0 && results.teamDamage.length === 0 && (!results.disconnects || results.disconnects.length === 0) && (!results.teamFlashes || results.teamFlashes.length === 0) && (!results.midRoundInactivity || results.midRoundInactivity.length === 0) && (!results.bodyBlocking || results.bodyBlocking.length === 0 || !results.bodyBlocking.some(b => b.events.length > 0)) && (!results.objectiveSabotage || results.objectiveSabotage.length === 0 || !results.objectiveSabotage.some(o => o.allEvents.length > 0)) && (
+      {results.afkDetections.length === 0 && results.teamKills.length === 0 && results.teamDamage.length === 0 && (!results.disconnects || results.disconnects.length === 0) && (!results.teamFlashes || results.teamFlashes.length === 0) && (!results.economyGriefing || !results.economyGriefing.byPlayer || results.economyGriefing.byPlayer.size === 0) && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <Users style={{ color: 'var(--color-text-muted)' }} className="mb-4" size={48} />
           <p style={{ color: 'var(--color-text-secondary)' }} className="text-lg font-medium">No issues detected</p>
-          <p style={{ color: 'var(--color-text-muted)' }} className="text-sm mt-2">The demo analysis found no AFK players, team kills, team damage, disconnects, or team flashes.</p>
+          <p style={{ color: 'var(--color-text-muted)' }} className="text-sm mt-2">The demo analysis found no issues detected.</p>
         </div>
       )}
     </div>

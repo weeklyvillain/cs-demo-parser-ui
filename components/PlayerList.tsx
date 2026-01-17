@@ -79,8 +79,8 @@ interface PlayerListProps {
 const PlayerList: React.FC<PlayerListProps> = ({ team }) => {
   const { 
     getActivePlayers, 
-    selectedPlayerId, 
-    mutedPlayerIds, 
+  selectedPlayerId,
+  mutedPlayerIds,
     toggleMute, 
     toggleTeamMute,
     setIsPlaying 
@@ -237,8 +237,8 @@ const PlayerList: React.FC<PlayerListProps> = ({ team }) => {
                 ) : (
                   <div className="flex flex-col items-center">
                     <span className="text-xs font-bold leading-none" style={{ color: teamColor }}>
-                      {player.hp}
-                    </span>
+                    {player.hp}
+                  </span>
                     <span className="text-[8px] text-slate-500 leading-none mt-0.5">HP</span>
                   </div>
                 )}
@@ -261,8 +261,8 @@ const PlayerList: React.FC<PlayerListProps> = ({ team }) => {
               <div className="flex flex-col flex-1 min-w-0 gap-1">
                 <div className="flex items-center gap-2">
                   <span className={`text-sm font-medium ${isSelected ? 'text-white' : 'text-slate-300'} truncate`}>
-                    {player.name}
-                  </span>
+                  {player.name}
+                </span>
                   {isDisconnected && (
                     <WifiOff 
                       size={14} 
@@ -299,7 +299,7 @@ const PlayerList: React.FC<PlayerListProps> = ({ team }) => {
                       {player.equipment.primary || player.equipment.secondary}
                     </span>
                   ) : (
-                    <span className="text-[10px] text-slate-500 uppercase">
+                <span className="text-[10px] text-slate-500 uppercase">
                       Knife
                     </span>
                   )}
@@ -338,7 +338,7 @@ const PlayerList: React.FC<PlayerListProps> = ({ team }) => {
                       {player.equipment.grenades.length > 4 && (
                         <span className="text-[9px] text-slate-500">
                           +{player.equipment.grenades.length - 4}
-                        </span>
+                </span>
                       )}
                     </div>
                   )}

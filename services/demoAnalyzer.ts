@@ -2,6 +2,7 @@ import { DemoFile, MatchFrame, Team, PlayerState } from '../types';
 import { analyzeRoundInactivity, InactivityResult, DEFAULT_MID_ROUND_AFK_CONFIG, MidRoundAfkConfig } from './midRoundAfk';
 import { detectBodyBlocking, BlockEvent, BodyBlockResult, DEFAULT_BODY_BLOCK_CONFIG } from './bodyBlocking';
 import { detectObjectiveSabotage, ObjectiveEvent, ObjectiveResult, DEFAULT_OBJECTIVE_CONFIG } from './objectiveSabotage';
+import { analyzeEconomyGriefingEventsOnly, EconomyResult, EconomyPlayerResult, EconomyEvent, DEFAULT_ECONOMY_EVENTS_ONLY_CONFIG } from './economyGriefingEventsOnly';
 
 export interface AFKDetection {
   playerId: number;
@@ -63,6 +64,7 @@ export interface DisconnectReconnect {
   roundsMissed?: number; // Number of rounds the player was disconnected for
   diedBeforeDisconnect?: boolean; // True if player died in the disconnect round (didn't miss that round)
   reconnectedBeforeFreezeEnd?: boolean; // True if player reconnected before freeze time ended (playing reconnect round)
+  reason?: string; // Disconnect reason (e.g., "Disconnect by user", "Kicked by server", "Connection timeout", etc.)
 }
 
 export interface TeamFlash {
@@ -121,6 +123,10 @@ export interface ObjectiveSabotage {
   allEvents: ObjectiveEvent[];
 }
 
+export interface EconomyGriefing {
+  byPlayer: Map<number, EconomyPlayerResult>;
+}
+
 export interface AnalysisResults {
   afkDetections: AFKDetection[];
   teamKills: TeamKill[];
@@ -130,6 +136,7 @@ export interface AnalysisResults {
   midRoundInactivity: MidRoundInactivity[];
   bodyBlocking: BodyBlocking[];
   objectiveSabotage: ObjectiveSabotage[];
+  economyGriefing: EconomyGriefing;
 }
 
 export interface AnalysisProgress {
@@ -234,38 +241,47 @@ export class DemoAnalyzer {
     }
     this.reportProgress(95, `Found ${teamFlashes.length} team flash events`);
 
-    // Mid-Round Inactivity (95-97%)
-    this.reportProgress(96, 'Detecting mid-round inactivity...');
+    // Mid-Round Inactivity (95-97%) - DISABLED
+    // this.reportProgress(96, 'Detecting mid-round inactivity...');
     let midRoundInactivity: MidRoundInactivity[] = [];
-    try {
-      midRoundInactivity = this.detectMidRoundInactivity();
-    } catch (err: any) {
-      console.warn('Mid-round inactivity detection failed:', err.message || err);
-      // Continue with empty array - don't break the entire analysis
-    }
-    this.reportProgress(97, `Found ${midRoundInactivity.length} mid-round inactivity detections`);
+    // try {
+    //   midRoundInactivity = this.detectMidRoundInactivity();
+    // } catch (err: any) {
+    //   console.warn('Mid-round inactivity detection failed:', err.message || err);
+    // }
+    // this.reportProgress(97, `Found ${midRoundInactivity.length} mid-round inactivity detections`);
 
-    // Body Blocking (97-98%)
-    this.reportProgress(98, 'Detecting body blocking...');
+    // Body Blocking (97-98%) - DISABLED
+    // this.reportProgress(98, 'Detecting body blocking...');
     let bodyBlocking: BodyBlocking[] = [];
-    try {
-      bodyBlocking = this.detectBodyBlocking();
-    } catch (err: any) {
-      console.warn('Body blocking detection failed:', err.message || err);
-      // Continue with empty array - don't break the entire analysis
-    }
-    this.reportProgress(98.5, `Found ${bodyBlocking.reduce((sum, b) => sum + b.events.length, 0)} body blocking events`);
+    // try {
+    //   bodyBlocking = this.detectBodyBlocking();
+    // } catch (err: any) {
+    //   console.warn('Body blocking detection failed:', err.message || err);
+    // }
+    // this.reportProgress(98.5, `Found ${bodyBlocking.reduce((sum, b) => sum + b.events.length, 0)} body blocking events`);
 
-    // Objective Sabotage (98.5-100%)
-    this.reportProgress(99, 'Detecting objective sabotage...');
+    // Objective Sabotage (98.5-99.5%) - DISABLED
+    // this.reportProgress(99, 'Detecting objective sabotage...');
     let objectiveSabotage: ObjectiveSabotage[] = [];
-    try {
-      objectiveSabotage = this.detectObjectiveSabotage();
-    } catch (err: any) {
-      console.warn('Objective sabotage detection failed:', err.message || err);
-      // Continue with empty array - don't break the entire analysis
-    }
-    this.reportProgress(100, `Found ${objectiveSabotage.reduce((sum, o) => sum + o.allEvents.length, 0)} objective sabotage events`);
+    // try {
+    //   objectiveSabotage = this.detectObjectiveSabotage();
+    // } catch (err: any) {
+    //   console.warn('Objective sabotage detection failed:', err.message || err);
+    // }
+    // this.reportProgress(99.5, `Found ${objectiveSabotage.reduce((sum, o) => sum + o.allEvents.length, 0)} objective sabotage events`);
+
+    // Economy Griefing (Event-Only) (99.5-100%) - DISABLED
+    // this.reportProgress(99.7, 'Detecting economy griefing (event-only)...');
+    let economyGriefing: EconomyGriefing = { byPlayer: new Map() };
+    // try {
+    //   economyGriefing = this.detectEconomyGriefingEventsOnly();
+    // } catch (err: any) {
+    //   console.warn('Economy griefing (event-only) detection failed:', err.message || err);
+    //   // Continue with empty result - don't break the entire analysis
+    // }
+    // this.reportProgress(100, `Found ${economyGriefing.byPlayer.size} players with economy griefing events`);
+    this.reportProgress(100, 'Analysis complete');
 
     return {
       afkDetections,
@@ -275,7 +291,8 @@ export class DemoAnalyzer {
       teamFlashes,
       midRoundInactivity,
       bodyBlocking,
-      objectiveSabotage
+      objectiveSabotage,
+      economyGriefing
     };
   }
 
@@ -840,15 +857,18 @@ export class DemoAnalyzer {
         let userId: number | undefined;
         let playerName: string | undefined;
         let eventTick: number | undefined;
+        let reason: string | undefined;
         
         if (event instanceof Map) {
           userId = event.get('userid') || event.get('user_id') || event.get('player_id') || event.get('playerid');
           playerName = event.get('player_name') || event.get('name') || event.get('playerName');
           eventTick = event.get('tick') || event.get('tick_num') || event.get('t');
+          reason = event.get('reason') || event.get('disconnect_reason') || event.get('reason_text');
         } else {
           userId = event.userid || event.user_id || event.player_id || event.playerid;
           playerName = event.player_name || event.name || event.playerName;
           eventTick = event.tick || event.tick_num || event.t;
+          reason = event.reason || event.disconnect_reason || event.reason_text;
         }
         
         if (eventTick && (userId !== undefined || playerName)) {
@@ -876,6 +896,177 @@ export class DemoAnalyzer {
             
             const disconnectTime = eventTick! / tickRate;
             
+            // Normalize reason text for better display
+            // CS2 disconnect reason codes from official SwiftlyS2 documentation
+            // Source: https://swiftlys2.net/docs/api/protobufdefinitions/enetworkdisconnectionreason/
+            const getDisconnectReason = (reasonValue: number | string): string | undefined => {
+              let code: number | undefined;
+              
+              if (typeof reasonValue === 'number') {
+                code = reasonValue;
+              } else {
+                const parsed = parseInt(String(reasonValue).trim(), 10);
+                if (!isNaN(parsed)) {
+                  code = parsed;
+                }
+              }
+              
+              if (code === undefined) {
+                // Handle string-based reasons
+                const reasonStr = String(reasonValue).trim();
+                if (reasonStr.length > 0) {
+                  const reasonLower = reasonStr.toLowerCase();
+                  if (reasonLower.includes('kicked') || reasonLower.includes('kick')) {
+                    return 'Kicked by server';
+                  } else if (reasonLower.includes('timeout') || reasonLower.includes('timed out')) {
+                    return 'Connection timeout';
+                  } else if (reasonLower.includes('banned') || reasonLower.includes('ban')) {
+                    return 'Banned';
+                  } else if (reasonLower.includes('disconnect by user') || reasonLower.includes('user disconnect')) {
+                    return 'Disconnected by user';
+                  } else if (reasonLower.includes('connection') && reasonLower.includes('lost')) {
+                    return 'Connection lost';
+                  } else if (reasonLower.includes('server') && reasonLower.includes('full')) {
+                    return 'Server full';
+                  } else {
+                    // Keep original but capitalize first letter
+                    return reasonStr.charAt(0).toUpperCase() + reasonStr.slice(1);
+                  }
+                }
+                return undefined;
+              }
+              
+              // CS2 disconnect reason codes from ENetworkDisconnectionReason enum
+              // Source: SwiftlyS2 documentation
+              const reasonCodeMap: Record<number, string> = {
+                0: 'Invalid',
+                1: 'Shutdown',
+                2: 'Disconnected by user',
+                3: 'Disconnect by server',
+                4: 'Connection lost',
+                5: 'Overflow',
+                6: 'Steam banned',
+                7: 'Steam in use',
+                8: 'Steam ticket',
+                9: 'Steam logon',
+                10: 'Steam auth cancelled',
+                11: 'Steam auth already used',
+                12: 'Steam auth invalid',
+                13: 'Steam VAC ban state',
+                14: 'Steam logged in elsewhere',
+                15: 'Steam VAC check timed out',
+                16: 'Steam dropped',
+                17: 'Steam ownership',
+                18: 'Server info overflow',
+                19: 'Tick message overflow',
+                20: 'String table message overflow',
+                21: 'Delta entity message overflow',
+                22: 'Temp entity message overflow',
+                23: 'Sounds message overflow',
+                24: 'Snapshot overflow',
+                25: 'Snapshot error',
+                26: 'Reliable overflow',
+                27: 'Bad delta tick',
+                28: 'No more splits',
+                29: 'Timed out',
+                30: 'Disconnected',
+                31: 'Leaving split',
+                32: 'Different class tables',
+                33: 'Bad relay password',
+                34: 'Bad spectator password',
+                35: 'HLTV restricted',
+                36: 'No spectators',
+                37: 'HLTV unavailable',
+                38: 'HLTV stop',
+                39: 'Kicked',
+                40: 'Ban added',
+                41: 'Kick ban added',
+                42: 'HLTV direct',
+                43: 'Pure server client extra',
+                44: 'Pure server mismatch',
+                45: 'User command',
+                46: 'Rejected by game',
+                47: 'Message parse error',
+                48: 'Invalid message error',
+                49: 'Bad server password',
+                50: 'Direct connect reservation',
+                51: 'Connection failure',
+                52: 'No peer group handlers',
+                53: 'Reconnection',
+                54: 'Loop shutdown',
+                55: 'Loop deactivate',
+                56: 'Host endgame',
+                57: 'Loop level load activate',
+                58: 'Create server failed',
+                59: 'Exiting',
+                60: 'Request hoststate idle',
+                61: 'Request hoststate HLTV relay',
+                62: 'Client consistency fail',
+                63: 'Client unable to CRC map',
+                64: 'Client no map',
+                65: 'Client different map',
+                66: 'Server requires Steam',
+                67: 'Steam deny misc',
+                68: 'Steam deny bad anti-cheat',
+                69: 'Server shutdown',
+                71: 'Replay incompatible',
+                72: 'Connect request timed out',
+                73: 'Server incompatible',
+                74: 'Local problem many relays',
+                75: 'Local problem hosted server primary relay',
+                76: 'Local problem network config',
+                77: 'Local problem other',
+                79: 'Remote timeout',
+                80: 'Remote timeout connecting',
+                81: 'Remote other',
+                82: 'Remote bad crypt',
+                83: 'Remote cert not trusted',
+                84: 'Unusual',
+                85: 'Internal error',
+                128: 'Reject bad challenge',
+                129: 'Reject no lobby',
+                130: 'Reject background map',
+                131: 'Reject single player',
+                132: 'Reject hidden game',
+                133: 'Reject LAN restrict',
+                134: 'Reject bad password',
+                135: 'Reject server full',
+                136: 'Reject invalid reservation',
+                137: 'Reject failed channel',
+                138: 'Reject connect from lobby',
+                139: 'Reject reserved for lobby',
+                140: 'Reject invalid key length',
+                141: 'Reject old protocol',
+                142: 'Reject new protocol',
+                143: 'Reject invalid connection',
+                144: 'Reject invalid cert length',
+                145: 'Reject invalid Steam cert length',
+                146: 'Reject Steam',
+                147: 'Reject server auth disabled',
+                148: 'Reject server CD key auth invalid',
+                149: 'Reject banned',
+                150: 'Kicked team killing',
+                151: 'Kicked TK start',
+                152: 'Kicked untrusted account',
+                153: 'Kicked convicted account',
+                154: 'Kicked competitive cooldown',
+                155: 'Kicked team hurting',
+                156: 'Kicked hostage killing',
+                157: 'Kicked voted off',
+                158: 'Kicked idle',
+                159: 'Kicked suicide',
+                160: 'Kicked no Steam login',
+                161: 'Kicked no Steam ticket',
+                162: 'Kicked input automation',
+                163: 'Kicked VACNet abnormal behavior',
+                164: 'Kicked insecure client'
+              };
+              
+              return reasonCodeMap[code] || `Disconnect code ${code}`;
+            };
+            
+            const normalizedReason = getDisconnectReason(reason);
+            
             const key = `${playerInfo.playerId}-${eventTick}`;
             eventBasedDisconnects.set(key, {
               playerId: playerInfo.playerId,
@@ -883,7 +1074,8 @@ export class DemoAnalyzer {
               team: playerInfo.team,
               disconnectTick: eventTick!,
               disconnectTime: disconnectTime,
-              disconnectRound: disconnectRound?.number || 0
+              disconnectRound: disconnectRound?.number || 0,
+              reason: normalizedReason
             });
           }
         }
@@ -1641,6 +1833,44 @@ export class DemoAnalyzer {
     }
     
     return results;
+  }
+
+  /**
+   * Detect economy griefing / buy sabotage
+   */
+  /**
+   * Detect economy griefing / buy sabotage (event-only)
+   */
+  private detectEconomyGriefingEventsOnly(): EconomyGriefing {
+    console.log('[DemoAnalyzer] Starting economy griefing (event-only) detection...');
+    try {
+      const rawEvents = (this.demoFile as any).rawEvents || [];
+      
+      console.log('[DemoAnalyzer] Calling analyzeEconomyGriefingEventsOnly with:', {
+        rounds: this.demoFile.rounds.length,
+        frames: this.demoFile.frames.length,
+        rawEvents: rawEvents.length,
+        tickRate: this.demoFile.tickRate
+      });
+      
+      const result = analyzeEconomyGriefingEventsOnly(
+        this.demoFile,
+        rawEvents,
+        DEFAULT_ECONOMY_EVENTS_ONLY_CONFIG
+      );
+      
+      console.log('[DemoAnalyzer] Economy griefing (event-only) detection complete:', {
+        playersWithEvents: result.byPlayer.size,
+        totalEvents: Array.from(result.byPlayer.values()).reduce((sum, p) => sum + p.events.length, 0),
+        flaggedPlayers: Array.from(result.byPlayer.values()).filter(p => p.flaggedMatch).length,
+      });
+      
+      return result;
+    } catch (err: any) {
+      console.error('[DemoAnalyzer] Error in detectEconomyGriefingEventsOnly:', err);
+      console.error('[DemoAnalyzer] Error stack:', err.stack);
+      throw err;
+    }
   }
 }
 

@@ -125,9 +125,9 @@ const App: React.FC = () => {
       const file = files[0];
       if (file.name.endsWith('.dem')) {
         await handleFileUpload(file);
-      } else {
+    } else {
         setError('Please drop a .dem file');
-      }
+    }
     }
   };
 
@@ -139,7 +139,7 @@ const App: React.FC = () => {
     setIsFilterOpen(false);
     setFileName(null);
     setIsDragging(false);
-    
+
     // Clear parser explicitly before resetting store (parser may hold ArrayBuffer references)
     setDemoParser(null);
     
@@ -364,7 +364,7 @@ const App: React.FC = () => {
               
               return (
                 <div className="relative filter-dropdown-container">
-                  <button
+            <button 
                     onClick={() => setIsFilterOpen(!isFilterOpen)}
                     style={{
                       backgroundColor: 'var(--color-bg-tertiary)',
@@ -383,7 +383,7 @@ const App: React.FC = () => {
                         ? `${selectedPlayers.length} player${selectedPlayers.length !== 1 ? 's' : ''} selected`
                         : 'Filter by player...'}
                     </span>
-                  </button>
+            </button>
                   {isFilterOpen && (
                     <div
                       style={{
@@ -408,7 +408,7 @@ const App: React.FC = () => {
                           Select players
                         </span>
                         {selectedPlayers.length > 0 && (
-                          <button
+            <button 
                             onClick={() => setSelectedPlayers([])}
                             style={{ color: 'var(--color-text-muted)', fontSize: '0.7rem' }}
                             className="hover:opacity-70 transition-opacity"
@@ -441,7 +441,7 @@ const App: React.FC = () => {
                                   e.currentTarget.style.backgroundColor = 'transparent';
                                 }
                               }}
-                            >
+            >
                               <input
                                 type="checkbox"
                                 checked={isSelected}
